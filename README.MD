@@ -2,6 +2,8 @@
 
 A simple demo project using **Astro** and **Sanity**.
 
+https://sanity-astro-kappa.vercel.app/
+
 ## Project Structure
 
 ```text
