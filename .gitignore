@@ -2,6 +2,8 @@
 
 # Dependencies
 /node_modules
+/astro-demo/node_modules
+/sanity-demo/node_modules
 /.pnp
 .pnp.js
 

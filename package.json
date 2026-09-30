@@ -1,0 +1,22 @@
+{
+  "name": "sanity-astro",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix ./astro-demo\" \"npm run dev --prefix ./sanity-demo\"",
+    "dev:astro": "npm run dev --prefix ./astro-demo",
+    "dev:sanity": "npm run dev --prefix ./sanity-demo",
+    "build": "npm run build --prefix ./astro-demo",
+    "preview": "npm run preview --prefix ./astro-demo",
+    "astro": "npm run astro --prefix ./astro-demo"
+  },
+  "allowScripts": {
+    "esbuild": true
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}
