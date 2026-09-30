@@ -1,0 +1,61 @@
+---
+import Button from "../components/Button.astro";
+import Main from "../layouts/main.astro";
+---
+
+<Main
+  title="Astro + Sanity Demo"
+  description="A simple demo showing how Astro works with Sanity as a headless CMS."
+>
+  <body>
+    <main class="min-h-screen flex items-center justify-center px-6">
+      <div class="max-w-3xl text-center">
+        <p
+          class="text-sm font-semibold uppercase tracking-widest text-purple-600 mb-4"
+        >
+          Demo Project
+        </p>
+
+        <h1 class="text-5xl md:text-6xl font-bold tracking-tight mb-6">
+          Astro + Sanity
+        </h1>
+
+        <p class="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto mb-8">
+          A simple demo showing how Astro can work with Sanity as a headless CMS
+          to create fast, flexible websites.
+        </p>
+
+        <div
+          class="flex flex-col sm:flex-row items-center justify-center gap-3"
+        >
+          <Button> Get Started </Button>
+
+          <a
+            href="/posts"
+            class="px-5 py-2 rounded-lg border border-gray-300 font-semibold hover:bg-gray-100 transition"
+          >
+            View Posts
+          </a>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mt-12 text-left">
+          <div class="p-6 rounded-xl border border-gray-200">
+            <h2 class="text-xl font-semibold mb-2">Astro</h2>
+            <p class="text-gray-600">
+              A modern web framework focused on fast, content-driven websites
+              with minimal JavaScript.
+            </p>
+          </div>
+
+          <div class="p-6 rounded-xl border border-gray-200">
+            <h2 class="text-xl font-semibold mb-2">Sanity</h2>
+            <p class="text-gray-600">
+              A flexible headless CMS for creating, managing, and delivering
+              structured content.
+            </p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</Main>

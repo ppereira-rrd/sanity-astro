@@ -1,0 +1,97 @@
+---
+import Main from "../../layouts/main.astro";
+
+import type { SanityDocument } from "@sanity/client";
+import { sanityClient } from "sanity:client";
+import {
+  createImageUrlBuilder,
+  type SanityImageSource,
+} from "@sanity/image-url";
+import { PortableText } from "astro-portabletext";
+
+const POST_QUERY = `*[_type == "post" && slug.current == $slug][0]`;
+
+const post = await sanityClient.fetch<SanityDocument>(POST_QUERY, Astro.params);
+
+export async function getStaticPaths(): Promise<
+  { params: { slug: string } }[]
+> {
+  const SLUGS_QUERY = `*[_type == "post" && defined(slug.current)]{
+    "params": {"slug": slug.current}
+  }`;
+
+  return await sanityClient.fetch(SLUGS_QUERY);
+}
+
+const { projectId, dataset } = sanityClient.config();
+
+const urlFor = (source: SanityImageSource) =>
+  projectId && dataset
+    ? createImageUrlBuilder({ projectId, dataset }).image(source)
+    : null;
+
+const postImageUrl = post.image
+  ? urlFor(post.image)?.width(900).height(500).url()
+  : null;
+---
+
+<Main
+  title=`${post.title} | Astro + Sanity`
+  description="A simple demo showing how Astro works with Sanity as a headless CMS."
+>
+  <body>
+    <main class="min-h-screen flex items-center justify-center px-6 py-16">
+      <article class="max-w-3xl w-full">
+        <a
+          href="/posts"
+          class="inline-block text-purple-600 underline hover:text-purple-800 mb-10"
+        >
+          ← Back to posts
+        </a>
+
+        <div class="text-center mb-10">
+          <p
+            class="text-sm font-semibold uppercase tracking-widest text-purple-600 mb-4"
+          >
+            Sanity CMS
+          </p>
+
+          <h1 class="text-4xl md:text-5xl font-bold tracking-tight mb-4">
+            {post.title}
+          </h1>
+
+          <p class="text-gray-500">
+            Published {new Date(post.publishedAt).toLocaleDateString()}
+          </p>
+        </div>
+
+        {
+          postImageUrl && (
+            <img
+              src={postImageUrl}
+              alt={post.title}
+              class="w-full aspect-video object-cover rounded-xl mb-10"
+              width="900"
+              height="500"
+            />
+          )
+        }
+
+        <div class="p-6 md:p-8 rounded-xl border border-gray-200">
+          <div class="prose max-w-none">
+            {Array.isArray(post.body) && <PortableText value={post.body} />}
+          </div>
+        </div>
+
+        <div class="text-center mt-10">
+          <a
+            href="/posts"
+            class="text-purple-600 underline hover:text-purple-800"
+          >
+            ← View all posts
+          </a>
+        </div>
+      </article>
+    </main>
+  </body>
+</Main>
