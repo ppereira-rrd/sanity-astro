@@ -1,0 +1,81 @@
+---
+import {
+  createImageUrlBuilder,
+  type SanityImageSource,
+} from "@sanity/image-url";
+
+import { sanityClient } from "sanity:client";
+import { PortableText } from "astro-portabletext";
+
+interface Props {
+  heading?: string;
+  text?: any;
+  image?: SanityImageSource;
+  buttonText?: string;
+  buttonUrl?: string;
+}
+
+const {
+  heading,
+  text,
+  image,
+  buttonText,
+  buttonUrl,
+} = Astro.props;
+
+const { projectId, dataset } = sanityClient.config();
+
+const urlFor = (source: SanityImageSource) =>
+  projectId && dataset
+    ? createImageUrlBuilder({ projectId, dataset }).image(source)
+    : null;
+
+const imageUrl = image
+  ? urlFor(image)?.width(1200).height(700).url()
+  : null;
+---
+
+<section class="py-16 md:py-24 px-6">
+  <div class="max-w-6xl mx-auto">
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+
+      <div>
+        {heading && (
+          <h2 class="text-3xl md:text-5xl font-bold tracking-tight mb-6">
+            {heading}
+          </h2>
+        )}
+
+        {Array.isArray(text) && (
+          <div class="prose max-w-none mb-8">
+            <PortableText value={text} />
+          </div>
+        )}
+
+        {buttonText && buttonUrl && (
+          <a
+            href={buttonUrl}
+            class="inline-block px-6 py-3 rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-800 transition"
+          >
+            {buttonText}
+          </a>
+        )}
+      </div>
+
+      {imageUrl && (
+        <div>
+          <img
+            src={imageUrl}
+            alt={heading || ""}
+            width="1200"
+            height="700"
+            class="w-full rounded-xl object-cover"
+          />
+        </div>
+      )}
+
+    </div>
+
+  </div>
+</section>

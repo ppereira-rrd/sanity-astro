@@ -5,12 +5,14 @@ import Main from "../../layouts/main.astro";
 
 const POSTS_QUERY = `*[
   _type == "post"
-  && defined(slug.current)
-]|order(publishedAt desc)[0...12]{
+  && defined(basic.slug.current)
+]|order(basic.publishedAt desc)[0...12]{
   _id,
-  title,
-  slug,
-  publishedAt
+  "title": basic.title,
+  "slug": basic.slug,
+  "excerpt": basic.excerpt,
+  "publishedAt": basic.publishedAt,
+  "featuredImage": basic.featuredImage
 }`;
 
 const posts = await sanityClient.fetch<SanityDocument[]>(POSTS_QUERY);

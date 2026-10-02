@@ -1,0 +1,49 @@
+---
+interface Testimonial {
+  quote?: string;
+  name?: string;
+}
+
+interface Props {
+  heading?: string;
+  testimonials?: Testimonial[];
+}
+
+const { heading, testimonials } = Astro.props;
+---
+
+<section class="py-16 md:py-24 px-6">
+  <div class="max-w-6xl mx-auto">
+
+    {heading && (
+      <h2 class="text-3xl md:text-4xl font-bold tracking-tight mb-10">
+        {heading}
+      </h2>
+    )}
+
+    {testimonials && testimonials.length > 0 && (
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        {testimonials.map((testimonial) => (
+          <blockquote class="border border-gray-200 rounded-xl p-6">
+
+            {testimonial.quote && (
+              <p class="text-lg leading-relaxed mb-5">
+                "{testimonial.quote}"
+              </p>
+            )}
+
+            {testimonial.name && (
+              <footer class="font-semibold">
+                — {testimonial.name}
+              </footer>
+            )}
+
+          </blockquote>
+        ))}
+
+      </div>
+    )}
+
+  </div>
+</section>

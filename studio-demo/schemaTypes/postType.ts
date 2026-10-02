@@ -6,30 +6,20 @@ export const postType = defineType({
   type: 'document',
   fields: [
     defineField({
-      name: 'title',
-      type: 'string',
-      validation: (rule) => rule.required(),
+      name: 'basic',
+      type: 'basicFields',
+      title: 'Basic Information',
     }),
     defineField({
-      name: 'meta_description',
-      type: 'string',
-      validation: (rule) => rule.required(),
+      name: 'category',
+      title: 'Category',
+      type: 'reference',
+      to: [{type: 'category'}],
     }),
     defineField({
-      name: 'slug',
-      type: 'slug',
-      options: {source: 'title'},
-      validation: (rule) => rule.required(),
-    }),
-    defineField({
-      name: 'publishedAt',
-      type: 'datetime',
-      initialValue: () => new Date().toISOString(),
-      validation: (rule) => rule.required(),
-    }),
-    defineField({
-      name: 'image',
-      type: 'image',
+      name: 'seo',
+      type: 'seo',
+      title: 'SEO & Social',
     }),
     defineField({
       name: 'body',
@@ -37,4 +27,17 @@ export const postType = defineType({
       of: [{type: 'block'}],
     }),
   ],
+  // Because basicFields is used instead of defining the fields in every page/post type
+  // a preview is need like the below so it looks proper on sanity. 
+  preview: {
+  select: {
+    title: 'basic.title',
+  },
+
+  prepare({ title }) {
+    return {
+      title: title || 'Untitled Page',
+    }
+  },
+},
 })

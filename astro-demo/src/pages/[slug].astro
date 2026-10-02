@@ -1,0 +1,77 @@
+---
+import Main from "../layouts/main.astro";
+
+import type { SanityDocument } from "@sanity/client";
+import { sanityClient } from "sanity:client";
+
+import HeroSection from "../components/HeroSection.astro";
+import HeadingSection from "../components/HeadingSection.astro";
+import CtaSection from "../components/CtaSection.astro";
+import FaqSection from "../components/FaqSection.astro";
+import FeatureGridSection from "../components/FeatureGridSection.astro";
+import TestimonialSection from "../components/TestimonialSection.astro";
+
+const PAGE_QUERY = `*[
+  _type == "page" &&
+  basic.slug.current == $slug
+][0]`;
+
+const page = await sanityClient.fetch<SanityDocument>(PAGE_QUERY, Astro.params);
+
+export async function getStaticPaths(): Promise<
+  { params: { slug: string } }[]
+> {
+  const SLUGS_QUERY = `*[
+  _type == "page" &&
+  defined(basic.slug.current)
+]{
+  "params": {
+    "slug": basic.slug.current
+  }
+}`;
+
+  return await sanityClient.fetch(SLUGS_QUERY);
+}
+
+if (!page) {
+  throw new Error("Page not found");
+}
+---
+
+<Main
+  title={page.seo?.metaTitle || page.title}
+  description={page.seo?.metaDescription ||
+    page.meta_description ||
+    page.excerpt ||
+    ""}
+>
+  <main class="min-h-screen">
+    {
+      Array.isArray(page.sections) &&
+        page.sections.map((section: any) => {
+          switch (section._type) {
+            case "heroSection":
+              return <HeroSection {...section} />;
+
+            case "headingSection":
+              return <HeadingSection {...section} />;
+
+            case "ctaSection":
+              return <CtaSection {...section} />;
+
+            case "faqSection":
+              return <FaqSection {...section} />;
+
+            case "featureGridSection":
+              return <FeatureGridSection {...section} />;
+
+            case "testimonialSection":
+              return <TestimonialSection {...section} />;
+
+            default:
+              return null;
+          }
+        })
+    }
+  </main>
+</Main>

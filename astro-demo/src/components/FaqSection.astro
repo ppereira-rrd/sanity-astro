@@ -1,0 +1,51 @@
+---
+import { PortableText } from "astro-portabletext";
+
+interface FAQ {
+  question?: string;
+  answer?: any;
+}
+
+interface Props {
+  heading?: string;
+  faqs?: FAQ[];
+}
+
+const { heading, faqs } = Astro.props;
+---
+
+<section class="py-16 md:py-24 px-6">
+  <div class="max-w-4xl mx-auto">
+
+    {heading && (
+      <h2 class="text-3xl md:text-4xl font-bold tracking-tight mb-10">
+        {heading}
+      </h2>
+    )}
+
+    {faqs && faqs.length > 0 && (
+      <div class="space-y-4">
+
+        {faqs.map((faq) => (
+          <details class="border border-gray-200 rounded-lg p-5 group">
+
+            {faq.question && (
+              <summary class="font-semibold text-lg cursor-pointer">
+                {faq.question}
+              </summary>
+            )}
+
+            {Array.isArray(faq.answer) && (
+              <div class="prose max-w-none mt-4">
+                <PortableText value={faq.answer} />
+              </div>
+            )}
+
+          </details>
+        ))}
+
+      </div>
+    )}
+
+  </div>
+</section>
