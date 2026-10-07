@@ -2,6 +2,10 @@
 import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
 import Main from "../../layouts/main.astro";
+import {
+  createImageUrlBuilder,
+  type SanityImageSource,
+} from "@sanity/image-url";
 
 const POSTS_QUERY = `*[
   _type == "post"
@@ -16,6 +20,13 @@ const POSTS_QUERY = `*[
 }`;
 
 const posts = await sanityClient.fetch<SanityDocument[]>(POSTS_QUERY);
+
+const { projectId, dataset } = sanityClient.config();
+
+const urlFor = (source: SanityImageSource) =>
+  projectId && dataset
+    ? createImageUrlBuilder({ projectId, dataset }).image(source)
+    : null;
 ---
 
 <Main
@@ -49,8 +60,22 @@ const posts = await sanityClient.fetch<SanityDocument[]>(POSTS_QUERY);
                   href={`/posts/${post.slug.current}`}
                   class="block p-6 rounded-xl border border-gray-200 hover:bg-gray-50 hover:shadow-md transition"
                 >
-                  <div class="flex items-center justify-between gap-4">
-                    <div>
+                  <div class="flex items-center gap-5">
+                    {post.featuredImage && (
+                      <img
+                        src={urlFor(post.featuredImage)
+                          ?.width(320)
+                          .height(320)
+                          .url()}
+                        alt={post.featuredImage.alt || post.title}
+                        class="w-24 h-24 shrink-0 rounded-lg object-cover"
+                        width="96"
+                        height="96"
+                        loading="lazy"
+                      />
+                    )}
+
+                    <div class="min-w-0 flex-1">
                       <h2 class="text-xl font-semibold mb-2">{post.title}</h2>
 
                       <p class="text-sm text-gray-500">

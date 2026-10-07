@@ -1,0 +1,26 @@
+---
+/** Renders a `textSection` — a run of rich text with no heading of its own. */
+import { PortableText } from "astro-portabletext";
+import BodyImage from "./BodyImage.astro";
+import BodyVideo from "./BodyVideo.astro";
+import ButtonBlock from "./ButtonBlock.astro";
+
+interface Props {
+  body?: any;
+}
+
+const { body } = Astro.props;
+
+// Images, videos and buttons the WordPress migration lifted out of Elementor.
+const bodyComponents = {
+  type: { image: BodyImage, video: BodyVideo, button: ButtonBlock },
+};
+---
+
+{
+  Array.isArray(body) && body.length > 0 && (
+    <div class="prose max-w-none mb-6">
+      <PortableText value={body} components={bodyComponents} />
+    </div>
+  )
+}

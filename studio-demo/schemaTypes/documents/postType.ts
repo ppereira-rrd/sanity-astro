@@ -1,5 +1,5 @@
 import {defineField, defineType} from 'sanity'
-import {bodyMembers, languageField, sameLanguageFilter, wordpressIdField} from '../fields/shared'
+import {languageField, sameLanguageFilter, wordpressIdField} from '../fields/shared'
 import {sectionMembers} from '../sections'
 
 export const postType = defineType({
@@ -28,16 +28,11 @@ export const postType = defineType({
       title: 'SEO & Social',
     }),
     defineField({
-      name: 'body',
-      type: 'array',
-      of: bodyMembers,
-    }),
-    defineField({
       name: 'sections',
       type: 'array',
       title: 'Page Sections',
       description:
-        'Rendered after the body \u2014 use these to pull in case results, attorneys, or a CTA',
+        'The whole article, section by section \u2014 body text, headings, case results, attorneys or a CTA',
       of: sectionMembers,
     }),
     wordpressIdField,

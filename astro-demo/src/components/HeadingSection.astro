@@ -1,5 +1,14 @@
 ---
+/**
+ * Renders a `headingSection` — a heading and the copy that sits under it. The
+ * migration splits a WordPress article at every heading, so a post or page is a
+ * run of these; the section carries vertical rhythm only and inherits its column
+ * width from whatever renders it.
+ */
 import { PortableText } from "astro-portabletext";
+import BodyImage from "./BodyImage.astro";
+import BodyVideo from "./BodyVideo.astro";
+import ButtonBlock from "./ButtonBlock.astro";
 
 interface Props {
   heading?: string;
@@ -7,61 +16,56 @@ interface Props {
   body?: any;
 }
 
-const {
-  heading,
-  headingLevel = "h2",
-  body,
-} = Astro.props;
+const { heading, headingLevel = "h2", body } = Astro.props;
 
 const headingTag = headingLevel;
+
+// Anything that can sit in a post body can end up inside a section body as well.
+const bodyComponents = {
+  type: { image: BodyImage, video: BodyVideo, button: ButtonBlock },
+};
 ---
 
-<section class="py-12 px-6">
-  <div class="max-w-6xl mx-auto">
+<div class="mb-8">
+  {
+    heading && (
+      <>
+        {headingTag === "h2" && (
+          <h2 class="text-2xl md:text-3xl font-bold tracking-tight mt-10 mb-4">
+            {heading}
+          </h2>
+        )}
 
-    {
-      heading && (
-        <>
-          {headingTag === "h2" && (
-            <h2 class="text-3xl md:text-4xl font-bold tracking-tight mb-6">
-              {heading}
-            </h2>
-          )}
+        {headingTag === "h3" && (
+          <h3 class="text-xl md:text-2xl font-bold tracking-tight mt-8 mb-3">
+            {heading}
+          </h3>
+        )}
 
-          {headingTag === "h3" && (
-            <h3 class="text-2xl md:text-3xl font-bold tracking-tight mb-6">
-              {heading}
-            </h3>
-          )}
+        {headingTag === "h4" && (
+          <h4 class="text-lg md:text-xl font-bold tracking-tight mt-6 mb-3">
+            {heading}
+          </h4>
+        )}
 
-          {headingTag === "h4" && (
-            <h4 class="text-xl md:text-2xl font-bold tracking-tight mb-5">
-              {heading}
-            </h4>
-          )}
+        {headingTag === "h5" && (
+          <h5 class="text-base md:text-lg font-bold tracking-tight mt-6 mb-2">
+            {heading}
+          </h5>
+        )}
 
-          {headingTag === "h5" && (
-            <h5 class="text-lg md:text-xl font-bold tracking-tight mb-4">
-              {heading}
-            </h5>
-          )}
+        {headingTag === "h6" && (
+          <h6 class="text-base font-bold tracking-tight mt-6 mb-2">{heading}</h6>
+        )}
+      </>
+    )
+  }
 
-          {headingTag === "h6" && (
-            <h6 class="text-base md:text-lg font-bold tracking-tight mb-4">
-              {heading}
-            </h6>
-          )}
-        </>
-      )
-    }
-
-    {
-      Array.isArray(body) && (
-        <div class="prose max-w-3xl">
-          <PortableText value={body} />
-        </div>
-      )
-    }
-
-  </div>
-</section>
+  {
+    Array.isArray(body) && body.length > 0 && (
+      <div class="prose max-w-none">
+        <PortableText value={body} components={bodyComponents} />
+      </div>
+    )
+  }
+</div>

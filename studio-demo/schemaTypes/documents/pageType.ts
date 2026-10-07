@@ -1,5 +1,5 @@
 import {defineField, defineType} from 'sanity'
-import {bodyMembers, languageField, wordpressIdField} from '../fields/shared'
+import {languageField, wordpressIdField} from '../fields/shared'
 import {sectionMembers} from '../sections'
 
 export const pageType = defineType({
@@ -25,17 +25,11 @@ export const pageType = defineType({
     }),
 
     defineField({
-      name: 'body',
-      type: 'array',
-      title: 'Body',
-      description: 'Rendered before the sections \u2014 holds the prose migrated from WordPress',
-      of: bodyMembers,
-    }),
-
-    defineField({
       name: 'sections',
       type: 'array',
       title: 'Page Sections',
+      description:
+        'The whole page, section by section \u2014 the WordPress migration writes its prose here too',
       of: sectionMembers,
     }),
 

@@ -63,8 +63,8 @@ export const wordpressIdField = defineField({
 })
 
 /**
- * The rich-text members pages and posts both use for their `body`. Inline images,
- * videos and buttons are what the WordPress migration lifts out of Elementor.
+ * The rich-text members every prose-carrying section uses. Inline images, videos
+ * and buttons are what the WordPress migration lifts out of Elementor.
  */
 export const bodyMembers = [
   defineArrayMember({type: 'block'}),

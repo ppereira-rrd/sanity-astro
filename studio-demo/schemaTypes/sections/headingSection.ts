@@ -1,4 +1,5 @@
 import {defineField, defineType} from 'sanity'
+import {bodyMembers} from '../fields/shared'
 
 export const headingSection = defineType({
   name: 'headingSection',
@@ -35,7 +36,9 @@ export const headingSection = defineType({
       name: 'body',
       type: 'array',
       title: 'Body Text',
-      of: [{type: 'block'}],
+      // Same members as a post body: the migration splits an article at its headings,
+      // so an inline image, video or button can land in any one of these sections.
+      of: bodyMembers,
     }),
   ],
 

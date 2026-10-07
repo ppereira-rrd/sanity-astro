@@ -20,7 +20,7 @@ import {JSDOM} from 'jsdom'
 import {createSchema, type ArraySchemaType, type ObjectSchemaType} from 'sanity'
 import {getCliClient} from 'sanity/cli'
 import {schemaTypes} from '../schemaTypes'
-import {supportedLanguages} from '../schemaTypes/fields/shared'
+import {defaultLanguage, supportedLanguages} from '../schemaTypes/fields/shared'
 
 const WP_API = 'https://www.joestephenslaw.com/wp-json/wp/v2'
 const WP_HOSTS = ['joestephenslaw.com', 'www.joestephenslaw.com']
@@ -35,17 +35,17 @@ const OUTPUT_DIR = join(process.cwd(), 'scripts', '.migration-output')
 const client = getCliClient({apiVersion: '2026-10-01'})
 
 /**
- * Compile the studio's real schema and reuse the `post.body` array type, so the HTML
- * deserializer only ever emits blocks, images and videos that `body` actually allows.
- * Keeping it derived means a schema change can't silently drift from the migration.
+ * Compile the studio's real schema and reuse `textSection.body`, so the HTML deserializer
+ * only ever emits blocks, images, videos and buttons a section actually allows. Keeping it
+ * derived means a schema change can't silently drift from the migration.
  */
 const schema = createSchema({name: 'migration', types: schemaTypes})
-const postSchema = schema.get('post') as ObjectSchemaType | undefined
-const bodyType = postSchema?.fields.find((field) => field.name === 'body')?.type as
+const textSectionSchema = schema.get('textSection') as ObjectSchemaType | undefined
+const bodyType = textSectionSchema?.fields.find((field) => field.name === 'body')?.type as
   ArraySchemaType | undefined
 
 if (!bodyType) {
-  throw new Error('Could not resolve the `body` field on the `post` schema type')
+  throw new Error('Could not resolve the `body` field on the `textSection` schema type')
 }
 
 // ---------------------------------------------------------------------------
@@ -583,23 +583,83 @@ async function ctaSection(cta: RawCta, fallbackAlt: string) {
   }
 }
 
+/** `headingSection` only offers h2–h6, so a stray h1 in the article body becomes an h2. */
+const HEADING_LEVELS: Record<string, string> = {h1: 'h2', h2: 'h2', h3: 'h3', h4: 'h4', h5: 'h5', h6: 'h6'}
+
+const blockText = (block: TypedObject) =>
+  flatten(
+    ((block as {children?: Array<{text?: string}>}).children ?? [])
+      .map((child) => child.text ?? '')
+      .join(''),
+  )
+
+interface HeadingSection {
+  _key: string
+  _type: 'headingSection'
+  heading: string
+  headingLevel: string
+  body: TypedObject[]
+}
+
+/**
+ * Splits a converted article at its headings so each one becomes a `headingSection`
+ * the editor can restyle or reorder on its own. Whatever runs before the first heading
+ * has no heading to belong to, so it becomes a leading `textSection` — documents carry
+ * no prose of their own, everything is a section.
+ */
+function splitAtHeadings(blocks: TypedObject[]) {
+  const lead: TypedObject[] = []
+  const sections: HeadingSection[] = []
+
+  for (const block of blocks) {
+    const style = block._type === 'block' ? (block as {style?: string}).style : undefined
+    const level = style ? HEADING_LEVELS[style] : undefined
+    const heading = level ? blockText(block) : ''
+
+    if (level && heading) {
+      sections.push({_key: key(), _type: 'headingSection', heading, headingLevel: level, body: []})
+      continue
+    }
+
+    // An empty heading carries no text, so it is dropped rather than opening a section.
+    if (level) continue
+
+    ;(sections.length ? sections[sections.length - 1].body : lead).push(block)
+  }
+
+  return {
+    lead,
+    // `body` is optional on the section — omit it when a heading has no copy under it.
+    sections: sections.map(
+      ({body, ...section}): Omit<HeadingSection, 'body'> & {body?: TypedObject[]} =>
+        body.length ? {...section, body} : section,
+    ),
+  }
+}
+
+/** Every block a document ended up with, across all of its sections. */
+const allBlocks = (sections: Array<Record<string, unknown>>): TypedObject[] =>
+  sections.flatMap((section) => (Array.isArray(section.body) ? (section.body as TypedObject[]) : []))
+
 /**
  * The Elementor pipeline, shared by posts and pages: clean the markup, convert what is
  * left to Portable Text, and collect the blocks that become `sections`.
  */
 async function convertContent(html: string, title: string) {
   const {html: clean, keyTakeaways, ctas, dropped} = cleanElementorHtml(html)
-  const body = await htmlToBody(clean, title)
+  const {lead, sections: headingSections} = splitAtHeadings(await htmlToBody(clean, title))
 
-  // Sections render after the body, in this order.
+  // The whole document, in render order.
   const sections = [
     ...(keyTakeaways?.items.length
       ? [{_key: key(), _type: 'keyTakeawaysSection', ...keyTakeaways}]
       : []),
+    ...(lead.length ? [{_key: key(), _type: 'textSection', body: lead}] : []),
+    ...headingSections,
     ...(await Promise.all(ctas.map((cta) => ctaSection(cta, title)))),
   ]
 
-  return {body, sections, keyTakeaways, ctas, dropped}
+  return {sections, keyTakeaways, ctas, lead, headingSections, dropped}
 }
 
 const seoFields = (yoast: WpPost['yoast_head_json'] = {}) => ({
@@ -740,11 +800,17 @@ async function migrateCategories(report: Array<Record<string, unknown>>) {
 
   const idByWpId = new Map<number, string>()
   for (const category of categories) {
+    const title = decode(category.name)
+    // Polylang lets a translated term keep the original term's slug, so most Spanish
+    // categories arrive as `motorcycle-accidents`. Only the default language keeps the
+    // WordPress slug; a translation gets one built from its own title.
+    const slug = category.lang === defaultLanguage ? category.slug : slugify(title)
+
     const doc = {
       _type: 'category',
       language: category.lang,
-      title: decode(category.name),
-      slug: {_type: 'slug', current: category.slug},
+      title,
+      slug: {_type: 'slug', current: slug},
       ...(category.description ? {description: decode(category.description)} : {}),
       wordpressId: category.id,
     }
@@ -752,14 +818,15 @@ async function migrateCategories(report: Array<Record<string, unknown>>) {
     report.push({
       type: 'category',
       wordpressId: category.id,
-      slug: category.slug,
+      slug,
+      wordpressSlug: category.slug,
       language: category.lang,
     })
 
     if (DRY_RUN) {
       // Placeholder IDs keep the post previews' category references readable.
-      idByWpId.set(category.id, `category-dry-run-${category.lang}-${category.slug}`)
-      writePreview(`category-${category.lang}-${category.slug}.json`, doc)
+      idByWpId.set(category.id, `category-dry-run-${category.lang}-${slug}`)
+      writePreview(`category-${category.lang}-${slug}.json`, doc)
       continue
     }
 
@@ -805,10 +872,11 @@ async function migratePages(report: Array<Record<string, unknown>>) {
     const slug = pagePath(page)
     console.log(`[${index + 1}/${pages.length}] ${page.lang} ${slug}`)
 
-    const {body, sections, keyTakeaways, ctas, dropped} = await convertContent(
+    const {sections, keyTakeaways, ctas, lead, headingSections, dropped} = await convertContent(
       page.content.rendered,
       title,
     )
+    const blocks = allBlocks(sections)
 
     const media = page._embedded?.['wp:featuredmedia']?.[0]
     const featuredAssetId = media?.source_url ? await uploadImage(media.source_url) : null
@@ -830,7 +898,6 @@ async function migratePages(report: Array<Record<string, unknown>>) {
           : {}),
       },
       seo: seoFields(yoast),
-      body,
       ...(sections.length ? {sections} : {}),
       wordpressId: page.id,
     }
@@ -841,10 +908,12 @@ async function migratePages(report: Array<Record<string, unknown>>) {
       slug,
       language: page.lang,
       parent: page.parent || null,
-      blocks: body.length,
+      blocks: blocks.length,
+      headingSections: headingSections.length,
+      lede: lead.length,
       keyTakeaways: keyTakeaways?.items.length ?? 0,
       ctas: ctas.length,
-      buttons: body.filter((block) => block._type === 'button').length,
+      buttons: blocks.filter((block) => block._type === 'button').length,
       dropped,
     })
 
@@ -884,10 +953,11 @@ async function main() {
     const title = decode(post.title.rendered)
     console.log(`[${index + 1}/${posts.length}] ${post.lang} ${post.slug}`)
 
-    const {body, sections, keyTakeaways, ctas, dropped} = await convertContent(
+    const {sections, keyTakeaways, ctas, lead, headingSections, dropped} = await convertContent(
       post.content.rendered,
       title,
     )
+    const blocks = allBlocks(sections)
 
     const media = post._embedded?.['wp:featuredmedia']?.[0]
     const featuredAssetId = media?.source_url ? await uploadImage(media.source_url) : null
@@ -917,7 +987,6 @@ async function main() {
       },
       ...(categoryId ? {category: {_type: 'reference', _ref: categoryId}} : {}),
       seo: seoFields(yoast),
-      body,
       ...(sections.length ? {sections} : {}),
       wordpressId: post.id,
     }
@@ -927,11 +996,13 @@ async function main() {
       wordpressId: post.id,
       slug: post.slug,
       language: post.lang,
-      blocks: body.length,
+      blocks: blocks.length,
+      headingSections: headingSections.length,
+      lede: lead.length,
       category: post.categories?.[0] ?? null,
       keyTakeaways: keyTakeaways?.items.length ?? 0,
       ctas: ctas.length,
-      buttons: body.filter((block) => block._type === 'button').length,
+      buttons: blocks.filter((block) => block._type === 'button').length,
       dropped,
     })
 

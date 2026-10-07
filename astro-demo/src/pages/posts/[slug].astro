@@ -7,11 +7,10 @@ import {
   createImageUrlBuilder,
   type SanityImageSource,
 } from "@sanity/image-url";
-import { PortableText } from "astro-portabletext";
 
-import BodyImage from "../../components/BodyImage.astro";
-import BodyVideo from "../../components/BodyVideo.astro";
 import KeyTakeawaysSection from "../../components/KeyTakeawaysSection.astro";
+import HeadingSection from "../../components/HeadingSection.astro";
+import TextSection from "../../components/TextSection.astro";
 import CtaSection from "../../components/CtaSection.astro";
 import ButtonBlock from "../../components/ButtonBlock.astro";
 
@@ -54,15 +53,6 @@ const urlFor = (source: SanityImageSource) =>
 const postImageUrl = post.basic?.featuredImage
   ? urlFor(post.basic.featuredImage)?.width(900).height(500).url()
   : null;
-
-// Images and videos the WordPress migration embedded in the body.
-const bodyComponents = {
-  type: {
-    image: BodyImage,
-    video: BodyVideo,
-    button: ButtonBlock,
-  },
-};
 ---
 
 <Main
@@ -112,27 +102,17 @@ const bodyComponents = {
       }
 
       {
-        post.basic?.excerpt && (
-          <p class="text-lg text-gray-600 mb-8">{post.basic.excerpt}</p>
-        )
-      }
-
-      <div class="p-6 md:p-8 rounded-xl border border-gray-200">
-        <div class="prose max-w-none">
-          {
-            Array.isArray(post.body) && (
-              <PortableText value={post.body} components={bodyComponents} />
-            )
-          }
-        </div>
-      </div>
-
-      {
         Array.isArray(post.sections) &&
           post.sections.map((section: any) => {
             switch (section._type) {
               case "keyTakeawaysSection":
                 return <KeyTakeawaysSection {...section} />;
+
+              case "headingSection":
+                return <HeadingSection {...section} />;
+
+              case "textSection":
+                return <TextSection {...section} />;
 
               case "ctaSection":
                 return <CtaSection {...section} />;

@@ -6,15 +6,13 @@ import { sanityClient } from "sanity:client";
 
 import HeroSection from "../components/HeroSection.astro";
 import HeadingSection from "../components/HeadingSection.astro";
+import TextSection from "../components/TextSection.astro";
 import CtaSection from "../components/CtaSection.astro";
 import FaqSection from "../components/FaqSection.astro";
 import FeatureGridSection from "../components/FeatureGridSection.astro";
 import TestimonialSection from "../components/TestimonialSection.astro";
 import ButtonBlock from "../components/ButtonBlock.astro";
-import BodyImage from "../components/BodyImage.astro";
-import BodyVideo from "../components/BodyVideo.astro";
 import KeyTakeawaysSection from "../components/KeyTakeawaysSection.astro";
-import { PortableText } from "astro-portabletext";
 
 const PAGE_QUERY = `*[
   _type == "page" &&
@@ -42,14 +40,6 @@ if (!page) {
   throw new Error("Page not found");
 }
 
-// Images, videos and buttons the WordPress migration embedded in the body.
-const bodyComponents = {
-  type: {
-    image: BodyImage,
-    video: BodyVideo,
-    button: ButtonBlock,
-  },
-};
 ---
 
 <Main
@@ -59,17 +49,7 @@ const bodyComponents = {
     page.excerpt ||
     ""}
 >
-  <main class="min-h-screen">
-    {
-      Array.isArray(page.body) && page.body.length > 0 && (
-        <div class="max-w-3xl mx-auto px-6 py-16">
-          <div class="prose max-w-none">
-            <PortableText value={page.body} components={bodyComponents} />
-          </div>
-        </div>
-      )
-    }
-
+  <main class="min-h-screen py-16">
     {
       Array.isArray(page.sections) &&
         page.sections.map((section: any) => {
@@ -77,8 +57,20 @@ const bodyComponents = {
             case "heroSection":
               return <HeroSection {...section} />;
 
+            // Prose sections read in a narrow column; the rest stay full width.
             case "headingSection":
-              return <HeadingSection {...section} />;
+              return (
+                <div class="max-w-3xl mx-auto px-6">
+                  <HeadingSection {...section} />
+                </div>
+              );
+
+            case "textSection":
+              return (
+                <div class="max-w-3xl mx-auto px-6">
+                  <TextSection {...section} />
+                </div>
+              );
 
             case "ctaSection":
               return <CtaSection {...section} />;

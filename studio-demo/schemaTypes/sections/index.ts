@@ -1,5 +1,6 @@
 import {heroSection} from './heroSection'
 import {headingSection} from './headingSection'
+import {textSection} from './textSection'
 import {ctaSection} from './ctaSection'
 import {faqSection} from './faqSection'
 import {featureGridSection} from './featureGridSection'
@@ -11,6 +12,7 @@ import {keyTakeawaysSection} from './keyTakeawaysSection'
 export const sectionTypes = [
   heroSection,
   headingSection,
+  textSection,
   ctaSection,
   faqSection,
   featureGridSection,
