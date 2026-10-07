@@ -1,0 +1,31 @@
+---
+/**
+ * Renders a `button` — a standalone link with a label and a URL.
+ *
+ * Takes props either way round: Portable Text passes the value as `node`, while a
+ * page/post section is spread straight onto the component.
+ */
+interface Props {
+  node?: { label?: string; url?: string };
+  label?: string;
+  url?: string;
+}
+
+const { node } = Astro.props;
+
+const label = Astro.props.label ?? node?.label;
+const url = Astro.props.url ?? node?.url;
+---
+
+{
+  label && url && (
+    <div class="my-8">
+      <a
+        href={url}
+        class="inline-block px-6 py-3 rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-800 transition"
+      >
+        {label}
+      </a>
+    </div>
+  )
+}

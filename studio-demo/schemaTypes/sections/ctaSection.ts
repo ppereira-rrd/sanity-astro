@@ -9,8 +9,7 @@ export const ctaSection = defineType({
     defineField({
       name: 'heading',
       type: 'string',
-      title: 'Heading',
-      validation: (rule) => rule.required(),
+      title: 'Title',
     }),
 
     defineField({
@@ -21,15 +20,49 @@ export const ctaSection = defineType({
     }),
 
     defineField({
+      name: 'image',
+      type: 'image',
+      title: 'Image',
+      options: {
+        hotspot: true,
+      },
+      fields: [
+        defineField({
+          name: 'alt',
+          type: 'string',
+          title: 'Alt Text',
+        }),
+      ],
+    }),
+
+    defineField({
       name: 'buttonText',
       type: 'string',
-      title: 'Button Text',
+      title: 'Button Label',
     }),
 
     defineField({
       name: 'buttonUrl',
       type: 'url',
-      title: 'Button URL',
+      title: 'Button Link',
+      validation: (rule) =>
+        rule.uri({allowRelative: true, scheme: ['http', 'https', 'mailto', 'tel']}),
     }),
   ],
+
+  preview: {
+    select: {
+      title: 'heading',
+      subtitle: 'buttonText',
+      media: 'image',
+    },
+
+    prepare({title, subtitle, media}) {
+      return {
+        title: title || 'CTA Section',
+        subtitle,
+        media,
+      }
+    },
+  },
 })

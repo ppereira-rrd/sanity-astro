@@ -24,4 +24,8 @@ export const sectionTypes = [
  * Every section, ready to drop into an array field's `of`. Pages and posts both
  * use this so a new section only has to be registered in one place.
  */
-export const sectionMembers = sectionTypes.map((section) => ({type: section.name}))
+export const sectionMembers = [
+  ...sectionTypes.map((section) => ({type: section.name})),
+  // Not a section type of its own — just a standalone link pages and posts can drop in.
+  {type: 'button'},
+]

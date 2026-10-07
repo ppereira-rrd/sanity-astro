@@ -12,6 +12,8 @@ import { PortableText } from "astro-portabletext";
 import BodyImage from "../../components/BodyImage.astro";
 import BodyVideo from "../../components/BodyVideo.astro";
 import KeyTakeawaysSection from "../../components/KeyTakeawaysSection.astro";
+import CtaSection from "../../components/CtaSection.astro";
+import ButtonBlock from "../../components/ButtonBlock.astro";
 
 // `basic.author` is a reference, so it has to be dereferenced to read the name and bio.
 const POST_QUERY = `*[
@@ -58,6 +60,7 @@ const bodyComponents = {
   type: {
     image: BodyImage,
     video: BodyVideo,
+    button: ButtonBlock,
   },
 };
 ---
@@ -130,6 +133,12 @@ const bodyComponents = {
             switch (section._type) {
               case "keyTakeawaysSection":
                 return <KeyTakeawaysSection {...section} />;
+
+              case "ctaSection":
+                return <CtaSection {...section} />;
+
+              case "button":
+                return <ButtonBlock {...section} />;
 
               default:
                 return null;

@@ -1,4 +1,4 @@
-import {defineField} from 'sanity'
+import {defineArrayMember, defineField} from 'sanity'
 
 /**
  * The languages the studio translates into. Keep this in sync with the
@@ -61,3 +61,29 @@ export const wordpressIdField = defineField({
   readOnly: true,
   hidden: true,
 })
+
+/**
+ * The rich-text members pages and posts both use for their `body`. Inline images,
+ * videos and buttons are what the WordPress migration lifts out of Elementor.
+ */
+export const bodyMembers = [
+  defineArrayMember({type: 'block'}),
+  defineArrayMember({
+    type: 'image',
+    options: {hotspot: true},
+    fields: [
+      defineField({
+        name: 'alt',
+        type: 'string',
+        title: 'Alt Text',
+      }),
+      defineField({
+        name: 'caption',
+        type: 'string',
+        title: 'Caption',
+      }),
+    ],
+  }),
+  defineArrayMember({type: 'video'}),
+  defineArrayMember({type: 'button'}),
+]

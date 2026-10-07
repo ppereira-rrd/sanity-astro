@@ -96,6 +96,11 @@ interface WpPost {
   }
 }
 
+/** Pages carry the same payload as posts, minus terms and plus their place in the tree. */
+interface WpPage extends Omit<WpPost, 'categories'> {
+  parent?: number
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -139,33 +144,24 @@ async function withRetry<T>(label: string, fn: () => Promise<T>, attempts = 5): 
   }
 }
 
-async function fetchAllPosts(): Promise<WpPost[]> {
-  const posts: WpPost[] = []
+/** Walks a paginated WordPress collection, stopping early once `limit` is reached. */
+async function fetchAllPaged<T>(resource: string, query = '', limit = Infinity): Promise<T[]> {
+  const items: T[] = []
   for (let page = 1; ; page++) {
-    const response = await withRetry(`posts page ${page}`, () =>
-      fetch(`${WP_API}/posts?per_page=100&page=${page}&_embed=author,wp:featuredmedia`),
+    const response = await withRetry(`${resource} page ${page}`, () =>
+      fetch(`${WP_API}/${resource}?per_page=100&page=${page}${query}`),
     )
-    if (!response.ok) throw new Error(`WordPress API ${response.status} on page ${page}`)
-    posts.push(...((await response.json()) as WpPost[]))
+    if (!response.ok) {
+      throw new Error(`WordPress API ${response.status} on ${resource} page ${page}`)
+    }
+    items.push(...((await response.json()) as T[]))
     const totalPages = Number(response.headers.get('x-wp-totalpages') ?? 1)
-    if (page >= totalPages || posts.length >= LIMIT) break
+    if (page >= totalPages || items.length >= limit) break
   }
-  return posts.slice(0, LIMIT)
+  return items.slice(0, limit)
 }
 
-async function fetchAllCategories(): Promise<WpCategory[]> {
-  const categories: WpCategory[] = []
-  for (let page = 1; ; page++) {
-    const response = await withRetry(`categories page ${page}`, () =>
-      fetch(`${WP_API}/categories?per_page=100&page=${page}`),
-    )
-    if (!response.ok) throw new Error(`WordPress API ${response.status} on categories page ${page}`)
-    categories.push(...((await response.json()) as WpCategory[]))
-    const totalPages = Number(response.headers.get('x-wp-totalpages') ?? 1)
-    if (page >= totalPages) break
-  }
-  return categories
-}
+const EMBED = '&_embed=author,wp:featuredmedia'
 
 // ---------------------------------------------------------------------------
 // Images
@@ -223,7 +219,6 @@ const TAKEAWAY_HEADING = /^(key takeaways?|puntos? claves?)$/i
 
 /** Widgets that are site chrome (CTAs, buttons, maps, carousels) rather than article content. */
 const DROPPED_WIDGETS = [
-  'button',
   'icon',
   'divider',
   'google_maps',
@@ -233,9 +228,20 @@ const DROPPED_WIDGETS = [
   'template',
 ]
 
+/** A call to action lifted out of Elementor, before its parts are uploaded/converted. */
+interface RawCta {
+  heading: string
+  textHtml: string
+  buttonText: string
+  buttonUrl: string
+  imageUrl: string | null
+  imageAlt: string
+}
+
 interface CleanResult {
   html: string
   keyTakeaways: {heading: string; items: string[]} | null
+  ctas: RawCta[]
   dropped: string[]
 }
 
@@ -245,10 +251,123 @@ function renameElement(el: Element, tagName: string) {
   el.replaceWith(replacement)
 }
 
+/** Links back to the old site become relative so they resolve on the new site. */
+function toRelativeHref(href: string): string {
+  const trimmed = href.trim()
+  if (/^tel:/i.test(trimmed)) return `tel:${trimmed.slice(4).replace(/[^\d+]/g, '')}`
+  try {
+    const url = new URL(trimmed)
+    if (!WP_HOSTS.includes(url.hostname)) return trimmed
+    return `${url.pathname.replace(/\/$/, '') || '/'}${url.search}${url.hash}`
+  } catch {
+    // Relative, mailto: — leave as is.
+    return trimmed
+  }
+}
+
+const CONTAINER = '[data-element_type="container"]'
+const BUTTON_WIDGET = '[data-widget_type^="button"]'
+const HEADING_WIDGET = '[data-widget_type^="heading"]'
+// Elementor records a container's background on the element itself.
+const STYLED = '[data-settings*="background_background"]'
+
+const flatten = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim()
+
+/**
+ * Walks out from a button widget to the outermost container that still only holds the
+ * call to action. Elementor nests CTAs several containers deep, and each wrapper adds
+ * layout rather than copy — so climbing stops as soon as a parent brings in real prose.
+ *
+ * `maxText` is the ceiling on how much copy a call to action may hold. Some layouts put
+ * the button straight into the article's own container, and without the ceiling the
+ * whole article would be mistaken for one enormous CTA.
+ */
+function ctaRoot(button: Element, maxText: number): Element | null {
+  let node: Element | null = button.closest(CONTAINER)
+  if (!node) return null
+
+  let text = flatten(node.textContent).length
+  if (text > maxText) return null
+
+  for (;;) {
+    const parent: Element | null = node.parentElement?.closest(CONTAINER) ?? null
+    if (!parent) return node
+
+    const parentText = flatten(parent.textContent).length
+    if (parentText > maxText || parentText > text + 40) return node
+
+    node = parent
+    text = parentText
+  }
+}
+
+/** Is this a designed block rather than a button dropped into the article flow? */
+function hasDesignElement(root: Element): boolean {
+  if (root.querySelector(HEADING_WIDGET)) return true
+  if (root.matches(STYLED) || root.querySelector(STYLED)) return true
+  // Icons are decorative SVGs; a raster image is artwork.
+  return Array.from(root.querySelectorAll('img')).some(
+    (img) => !/\.svg(\?|$)/i.test(img.getAttribute('src') ?? ''),
+  )
+}
+
+/**
+ * A container counts as a CTA when a button is paired with some design — a heading, a
+ * background or artwork. Body copy comes along when it is there, but a bare button sitting
+ * in the article flow is a plain `button` block instead.
+ */
+function extractCta(root: Element): RawCta | null {
+  const button = root.querySelector(`a.elementor-button, ${BUTTON_WIDGET} a[href]`)
+  const buttonUrl = button?.getAttribute('href')?.trim()
+  const buttonText = flatten(button?.textContent)
+  if (!buttonUrl || !buttonText) return null
+
+  if (!hasDesignElement(root)) return null
+
+  // Elementor renders heading widgets as whatever tag the editor picked, often a <p>.
+  // Blocks that lead with artwork carry no heading at all, which the schema allows.
+  const heading = flatten(
+    root.querySelector(HEADING_WIDGET)?.textContent ??
+      root.querySelector('h1, h2, h3, h4, h5, h6')?.textContent,
+  )
+
+  // Decorative icons sit alongside the real artwork, so take the largest non-SVG image.
+  const image = Array.from(root.querySelectorAll('img'))
+    .filter((img) => !/\.svg(\?|$)/i.test(img.getAttribute('src') ?? ''))
+    .sort((a, b) => Number(b.getAttribute('width') ?? 0) - Number(a.getAttribute('width') ?? 0))[0]
+
+  // The body copy is whatever is left once the heading, button and media are taken out.
+  const clone = root.cloneNode(true) as Element
+  clone
+    .querySelectorAll(
+      `${HEADING_WIDGET}, ${BUTTON_WIDGET}, a.elementor-button, h1, h2, h3, h4, h5, h6, img, figure`,
+    )
+    .forEach((el) => el.remove())
+  clone.querySelectorAll('a[href]').forEach((a) => {
+    a.setAttribute('href', toRelativeHref(a.getAttribute('href')!))
+  })
+  const textHtml = Array.from(clone.querySelectorAll('p, ul, ol'))
+    // Nested lists and paragraphs come along inside their parent's outerHTML.
+    .filter((el) => !el.parentElement?.closest('ul, ol'))
+    .filter((el) => flatten(el.textContent))
+    .map((el) => el.outerHTML)
+    .join('')
+
+  return {
+    heading,
+    textHtml,
+    buttonText,
+    buttonUrl: toRelativeHref(buttonUrl),
+    imageUrl: image?.getAttribute('src')?.trim() || null,
+    imageAlt: image?.getAttribute('alt')?.trim() || '',
+  }
+}
+
 function cleanElementorHtml(html: string): CleanResult {
   const doc = new JSDOM(`<body>${html}</body>`).window.document
   const dropped: string[] = []
   let keyTakeaways: CleanResult['keyTakeaways'] = null
+  const ctas: RawCta[] = []
 
   doc.querySelectorAll('svg, script, style, noscript, form').forEach((el) => el.remove())
 
@@ -299,7 +418,45 @@ function cleanElementorHtml(html: string): CleanResult {
     widget.remove()
   })
 
-  // Shared Elementor library templates left at this point are CTAs / promo blocks.
+  // Calls to action: a promo container built around a button widget. Lifted out before
+  // the button widget itself is dropped below, and deduped because the same block is
+  // often repeated down a page.
+  // A call to action is a sidebar next to the article, not the article itself.
+  const maxCtaText = Math.max(800, Math.round(flatten(doc.body.textContent).length * 0.3))
+  const seenCtas = new Set<string>()
+  for (const button of Array.from(doc.querySelectorAll(BUTTON_WIDGET))) {
+    // An earlier pass may have already taken this button's container out of the document.
+    if (!button.isConnected) continue
+    const root = ctaRoot(button, maxCtaText)
+    const cta = root && extractCta(root)
+    if (!root || !cta) continue
+
+    const fingerprint = `${cta.heading}|${cta.buttonUrl}|${cta.textHtml}`
+    if (!seenCtas.has(fingerprint)) {
+      seenCtas.add(fingerprint)
+      ctas.push(cta)
+    }
+    root.remove()
+  }
+
+  // Whatever buttons are left are standalone links in the article flow — the CTA pass
+  // above already took the promo blocks. They keep their position in the body.
+  doc.querySelectorAll(BUTTON_WIDGET).forEach((widget) => {
+    const link = widget.querySelector('a[href]')
+    const label = flatten(link?.textContent)
+    const href = link?.getAttribute('href')?.trim()
+    if (!label || !href) {
+      dropped.push('button (no link)')
+      widget.remove()
+      return
+    }
+    const marker = doc.createElement('figure')
+    marker.setAttribute('data-button-url', toRelativeHref(href))
+    marker.setAttribute('data-button-label', label)
+    widget.replaceWith(marker)
+  })
+
+  // Shared Elementor library templates left at this point are promo blocks, not article content.
   doc.querySelectorAll('[data-elementor-type="container"]').forEach((el) => {
     dropped.push(`template ${el.getAttribute('data-elementor-id')}`)
     el.remove()
@@ -326,24 +483,11 @@ function cleanElementorHtml(html: string): CleanResult {
   doc.querySelectorAll('h1').forEach((el) => renameElement(el, 'h2'))
   doc.querySelectorAll('h5, h6').forEach((el) => renameElement(el, 'h4'))
 
-  // Links back to the old site become relative so they resolve on the new site.
   doc.querySelectorAll('a[href]').forEach((a) => {
-    const href = a.getAttribute('href')!.trim()
-    if (/^tel:/i.test(href)) {
-      a.setAttribute('href', `tel:${href.slice(4).replace(/[^\d+]/g, '')}`)
-      return
-    }
-    try {
-      const url = new URL(href)
-      if (WP_HOSTS.includes(url.hostname)) {
-        a.setAttribute('href', `${url.pathname.replace(/\/$/, '') || '/'}${url.search}${url.hash}`)
-      }
-    } catch {
-      // Relative, mailto: — leave as is.
-    }
+    a.setAttribute('href', toRelativeHref(a.getAttribute('href')!))
   })
 
-  return {html: doc.body.innerHTML, keyTakeaways, dropped}
+  return {html: doc.body.innerHTML, keyTakeaways, ctas, dropped}
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +514,14 @@ async function htmlToBody(html: string, postTitle: string): Promise<TypedObject[
           if (node.nodeType !== 1) return undefined
           const element = node as Element
           const tag = element.tagName.toLowerCase()
+
+          if (tag === 'figure' && element.hasAttribute('data-button-url')) {
+            return createBlock({
+              _type: 'button',
+              label: element.getAttribute('data-button-label'),
+              url: element.getAttribute('data-button-url'),
+            }) as never
+          }
 
           if (tag === 'figure' && element.hasAttribute('data-video-url')) {
             return createBlock({
@@ -406,6 +558,65 @@ async function htmlToBody(html: string, postTitle: string): Promise<TypedObject[
     const children = (block as {children?: Array<{text?: string}>}).children ?? []
     return children.some((child) => child.text?.trim())
   }) as TypedObject[]
+}
+
+// ---------------------------------------------------------------------------
+// Sections
+// ---------------------------------------------------------------------------
+
+/**
+ * Turns an extracted CTA into a `ctaSection`: uploads its image and converts its
+ * copy to Portable Text. Pages and posts both take these in their `sections` array.
+ */
+async function ctaSection(cta: RawCta, fallbackAlt: string) {
+  const assetId = cta.imageUrl ? await uploadImage(cta.imageUrl) : null
+  const text = cta.textHtml ? await htmlToBody(cta.textHtml, cta.heading) : []
+
+  return {
+    _key: key(),
+    _type: 'ctaSection',
+    ...(cta.heading ? {heading: cta.heading} : {}),
+    ...(text.length ? {text} : {}),
+    ...(assetId ? {image: imageField(assetId, cta.imageAlt || fallbackAlt)} : {}),
+    buttonText: cta.buttonText,
+    buttonUrl: cta.buttonUrl,
+  }
+}
+
+/**
+ * The Elementor pipeline, shared by posts and pages: clean the markup, convert what is
+ * left to Portable Text, and collect the blocks that become `sections`.
+ */
+async function convertContent(html: string, title: string) {
+  const {html: clean, keyTakeaways, ctas, dropped} = cleanElementorHtml(html)
+  const body = await htmlToBody(clean, title)
+
+  // Sections render after the body, in this order.
+  const sections = [
+    ...(keyTakeaways?.items.length
+      ? [{_key: key(), _type: 'keyTakeawaysSection', ...keyTakeaways}]
+      : []),
+    ...(await Promise.all(ctas.map((cta) => ctaSection(cta, title)))),
+  ]
+
+  return {body, sections, keyTakeaways, ctas, dropped}
+}
+
+const seoFields = (yoast: WpPost['yoast_head_json'] = {}) => ({
+  _type: 'seo',
+  ...(yoast.title ? {metaTitle: decode(yoast.title)} : {}),
+  ...(yoast.description ? {metaDescription: yoast.description} : {}),
+  noIndex: yoast.robots?.index === 'noindex',
+})
+
+/** Documents already imported, so a rerun updates them instead of duplicating. */
+async function existingIdsByWpId(type: string) {
+  if (DRY_RUN) return new Map<number, string>()
+  const docs = await client.fetch<Array<{_id: string; wordpressId: number}>>(
+    `*[_type == $type && defined(wordpressId) && !(_id in path("drafts.**"))]{_id, wordpressId}`,
+    {type},
+  )
+  return new Map(docs.map((doc) => [doc.wordpressId, doc._id]))
 }
 
 // ---------------------------------------------------------------------------
@@ -510,7 +721,7 @@ async function linkTranslations(
  */
 async function migrateCategories(report: Array<Record<string, unknown>>) {
   console.log(`${DRY_RUN ? '[dry run] ' : ''}Fetching WordPress categories…`)
-  const all = await fetchAllCategories()
+  const all = await fetchAllPaged<WpCategory>('categories')
   const categories = all.filter((category) => LANGUAGES.includes(category.lang ?? ''))
   const skipped = all.length - categories.length
   console.log(
@@ -565,6 +776,92 @@ async function migrateCategories(report: Array<Record<string, unknown>>) {
 }
 
 // ---------------------------------------------------------------------------
+// Pages
+// ---------------------------------------------------------------------------
+
+/**
+ * WordPress pages are hierarchical, so the leaf slug is not unique — several branches
+ * have a `car-accident` child. The Sanity slug keeps the whole path. Polylang prefixes
+ * Spanish URLs with `/es/`, which is dropped: the language lives on the document.
+ */
+function pagePath(page: WpPage): string {
+  const path = new URL(page.link).pathname.replace(/^\/+|\/+$/g, '')
+  const prefix = `${page.lang}/`
+  return (path.startsWith(prefix) ? path.slice(prefix.length) : path) || page.slug
+}
+
+async function migratePages(report: Array<Record<string, unknown>>) {
+  console.log(`${DRY_RUN ? '[dry run] ' : ''}Fetching WordPress pages…`)
+  const all = await fetchAllPaged<WpPage>('pages', EMBED, LIMIT)
+  const pages = all.filter((page) => LANGUAGES.includes(page.lang ?? ''))
+  const skipped = all.length - pages.length
+  console.log(`Found ${pages.length} pages${skipped ? ` (${skipped} skipped: no language)` : ''}`)
+
+  const existing = await existingIdsByWpId('page')
+  const idByWpId = new Map<number, string>()
+
+  for (const [index, page] of pages.entries()) {
+    const title = decode(page.title.rendered)
+    const slug = pagePath(page)
+    console.log(`[${index + 1}/${pages.length}] ${page.lang} ${slug}`)
+
+    const {body, sections, keyTakeaways, ctas, dropped} = await convertContent(
+      page.content.rendered,
+      title,
+    )
+
+    const media = page._embedded?.['wp:featuredmedia']?.[0]
+    const featuredAssetId = media?.source_url ? await uploadImage(media.source_url) : null
+    const yoast = page.yoast_head_json ?? {}
+    const excerpt = truncate(yoast.description || decode(page.excerpt.rendered), 300)
+
+    const doc = {
+      _type: 'page',
+      language: page.lang,
+      basic: {
+        _type: 'basicFields',
+        title,
+        slug: {_type: 'slug', current: slug},
+        ...(excerpt ? {excerpt} : {}),
+        publishedAt: new Date(`${page.date_gmt}Z`).toISOString(),
+        author: await authorRef(page._embedded?.author?.[0]),
+        ...(featuredAssetId
+          ? {featuredImage: imageField(featuredAssetId, media?.alt_text?.trim() || title)}
+          : {}),
+      },
+      seo: seoFields(yoast),
+      body,
+      ...(sections.length ? {sections} : {}),
+      wordpressId: page.id,
+    }
+
+    report.push({
+      type: 'page',
+      wordpressId: page.id,
+      slug,
+      language: page.lang,
+      parent: page.parent || null,
+      blocks: body.length,
+      keyTakeaways: keyTakeaways?.items.length ?? 0,
+      ctas: ctas.length,
+      buttons: body.filter((block) => block._type === 'button').length,
+      dropped,
+    })
+
+    if (DRY_RUN) {
+      writePreview(`page-${page.lang}-${slug.replace(/\//g, '--')}.json`, doc)
+      continue
+    }
+
+    const id = existing.get(page.id) ?? randomUUID()
+    await withRetry(`save page ${slug}`, () => client.createOrReplace({...doc, _id: id}))
+    idByWpId.set(page.id, id)
+  }
+
+  await linkTranslations(pages, 'page', idByWpId)
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -574,18 +871,12 @@ async function main() {
   const categoryIdByWpId = await migrateCategories(report)
 
   console.log(`${DRY_RUN ? '[dry run] ' : ''}Fetching WordPress posts…`)
-  const posts = (await fetchAllPosts()).filter((post) => LANGUAGES.includes(post.lang ?? ''))
+  const posts = (await fetchAllPaged<WpPost>('posts', EMBED, LIMIT)).filter((post) =>
+    LANGUAGES.includes(post.lang ?? ''),
+  )
   console.log(`Found ${posts.length} posts`)
 
-  const existing = DRY_RUN
-    ? new Map<number, string>()
-    : new Map(
-        (
-          await client.fetch<Array<{_id: string; wordpressId: number}>>(
-            `*[_type == "post" && defined(wordpressId) && !(_id in path("drafts.**"))]{_id, wordpressId}`,
-          )
-        ).map((doc) => [doc.wordpressId, doc._id]),
-      )
+  const existing = await existingIdsByWpId('post')
 
   const sanityIdByWpId = new Map<number, string>()
 
@@ -593,8 +884,10 @@ async function main() {
     const title = decode(post.title.rendered)
     console.log(`[${index + 1}/${posts.length}] ${post.lang} ${post.slug}`)
 
-    const {html, keyTakeaways, dropped} = cleanElementorHtml(post.content.rendered)
-    const body = await htmlToBody(html, title)
+    const {body, sections, keyTakeaways, ctas, dropped} = await convertContent(
+      post.content.rendered,
+      title,
+    )
 
     const media = post._embedded?.['wp:featuredmedia']?.[0]
     const featuredAssetId = media?.source_url ? await uploadImage(media.source_url) : null
@@ -623,17 +916,9 @@ async function main() {
           : {}),
       },
       ...(categoryId ? {category: {_type: 'reference', _ref: categoryId}} : {}),
-      seo: {
-        _type: 'seo',
-        ...(yoast.title ? {metaTitle: decode(yoast.title)} : {}),
-        ...(yoast.description ? {metaDescription: yoast.description} : {}),
-        noIndex: yoast.robots?.index === 'noindex',
-      },
+      seo: seoFields(yoast),
       body,
-      // Key takeaways are a section, rendered after the body.
-      ...(keyTakeaways?.items.length
-        ? {sections: [{_key: key(), _type: 'keyTakeawaysSection', ...keyTakeaways}]}
-        : {}),
+      ...(sections.length ? {sections} : {}),
       wordpressId: post.id,
     }
 
@@ -645,6 +930,8 @@ async function main() {
       blocks: body.length,
       category: post.categories?.[0] ?? null,
       keyTakeaways: keyTakeaways?.items.length ?? 0,
+      ctas: ctas.length,
+      buttons: body.filter((block) => block._type === 'button').length,
       dropped,
     })
 
@@ -660,6 +947,8 @@ async function main() {
   }
 
   await linkTranslations(posts, 'post', sanityIdByWpId)
+
+  await migratePages(report)
 
   writePreview('_report.json', report)
   console.log(`Done. Report: ${join(OUTPUT_DIR, '_report.json')}`)

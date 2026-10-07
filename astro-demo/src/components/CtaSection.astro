@@ -1,46 +1,77 @@
 ---
+/**
+ * Renders a `ctaSection` — title, text, an optional image and a single button.
+ */
+import {
+  createImageUrlBuilder,
+  type SanityImageSource,
+} from "@sanity/image-url";
+
+import { sanityClient } from "sanity:client";
 import { PortableText } from "astro-portabletext";
 
 interface Props {
   heading?: string;
   text?: any;
+  image?: SanityImageSource & { alt?: string };
   buttonText?: string;
   buttonUrl?: string;
 }
 
-const {
-  heading,
-  text,
-  buttonText,
-  buttonUrl,
-} = Astro.props;
+const { heading, text, image, buttonText, buttonUrl } = Astro.props;
+
+const { projectId, dataset } = sanityClient.config();
+
+const urlFor = (source: SanityImageSource) =>
+  projectId && dataset
+    ? createImageUrlBuilder({ projectId, dataset }).image(source)
+    : null;
+
+const imageUrl = image ? urlFor(image)?.width(800).height(600).url() : null;
 ---
 
 <section class="py-16 md:py-24 px-6">
   <div class="max-w-6xl mx-auto">
 
-    <div class="rounded-xl border border-gray-200 p-8 md:p-12 text-center">
+    <div class="rounded-xl border border-gray-200 p-8 md:p-12">
 
-      {heading && (
-        <h2 class="text-3xl md:text-4xl font-bold tracking-tight mb-5">
-          {heading}
-        </h2>
-      )}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
 
-      {Array.isArray(text) && (
-        <div class="prose max-w-2xl mx-auto mb-8">
-          <PortableText value={text} />
+        <div>
+          {heading && (
+            <h2 class="text-3xl md:text-4xl font-bold tracking-tight mb-5">
+              {heading}
+            </h2>
+          )}
+
+          {Array.isArray(text) && (
+            <div class="prose max-w-none mb-8">
+              <PortableText value={text} />
+            </div>
+          )}
+
+          {buttonText && buttonUrl && (
+            <a
+              href={buttonUrl}
+              class="inline-block px-6 py-3 rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-800 transition"
+            >
+              {buttonText}
+            </a>
+          )}
         </div>
-      )}
 
-      {buttonText && buttonUrl && (
-        <a
-          href={buttonUrl}
-          class="inline-block px-6 py-3 rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-800 transition"
-        >
-          {buttonText}
-        </a>
-      )}
+        {imageUrl && (
+          <img
+            src={imageUrl}
+            alt={image?.alt || heading || ""}
+            width="800"
+            height="600"
+            class="w-full rounded-xl object-cover"
+            loading="lazy"
+          />
+        )}
+
+      </div>
 
     </div>
 

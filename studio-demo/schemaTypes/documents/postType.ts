@@ -1,5 +1,5 @@
-import {defineArrayMember, defineField, defineType} from 'sanity'
-import {languageField, sameLanguageFilter, wordpressIdField} from '../fields/shared'
+import {defineField, defineType} from 'sanity'
+import {bodyMembers, languageField, sameLanguageFilter, wordpressIdField} from '../fields/shared'
 import {sectionMembers} from '../sections'
 
 export const postType = defineType({
@@ -30,27 +30,7 @@ export const postType = defineType({
     defineField({
       name: 'body',
       type: 'array',
-      of: [
-        defineArrayMember({type: 'block'}),
-        // Inline images and videos lifted out of migrated WordPress content.
-        defineArrayMember({
-          type: 'image',
-          options: {hotspot: true},
-          fields: [
-            defineField({
-              name: 'alt',
-              type: 'string',
-              title: 'Alt Text',
-            }),
-            defineField({
-              name: 'caption',
-              type: 'string',
-              title: 'Caption',
-            }),
-          ],
-        }),
-        defineArrayMember({type: 'video'}),
-      ],
+      of: bodyMembers,
     }),
     defineField({
       name: 'sections',

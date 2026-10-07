@@ -10,6 +10,11 @@ import CtaSection from "../components/CtaSection.astro";
 import FaqSection from "../components/FaqSection.astro";
 import FeatureGridSection from "../components/FeatureGridSection.astro";
 import TestimonialSection from "../components/TestimonialSection.astro";
+import ButtonBlock from "../components/ButtonBlock.astro";
+import BodyImage from "../components/BodyImage.astro";
+import BodyVideo from "../components/BodyVideo.astro";
+import KeyTakeawaysSection from "../components/KeyTakeawaysSection.astro";
+import { PortableText } from "astro-portabletext";
 
 const PAGE_QUERY = `*[
   _type == "page" &&
@@ -36,6 +41,15 @@ export async function getStaticPaths(): Promise<
 if (!page) {
   throw new Error("Page not found");
 }
+
+// Images, videos and buttons the WordPress migration embedded in the body.
+const bodyComponents = {
+  type: {
+    image: BodyImage,
+    video: BodyVideo,
+    button: ButtonBlock,
+  },
+};
 ---
 
 <Main
@@ -46,6 +60,16 @@ if (!page) {
     ""}
 >
   <main class="min-h-screen">
+    {
+      Array.isArray(page.body) && page.body.length > 0 && (
+        <div class="max-w-3xl mx-auto px-6 py-16">
+          <div class="prose max-w-none">
+            <PortableText value={page.body} components={bodyComponents} />
+          </div>
+        </div>
+      )
+    }
+
     {
       Array.isArray(page.sections) &&
         page.sections.map((section: any) => {
@@ -67,6 +91,12 @@ if (!page) {
 
             case "testimonialSection":
               return <TestimonialSection {...section} />;
+
+            case "button":
+              return <ButtonBlock {...section} />;
+
+            case "keyTakeawaysSection":
+              return <KeyTakeawaysSection {...section} />;
 
             default:
               return null;

@@ -1,5 +1,5 @@
 import {defineField, defineType} from 'sanity'
-import {languageField} from '../fields/shared'
+import {bodyMembers, languageField, wordpressIdField} from '../fields/shared'
 import {sectionMembers} from '../sections'
 
 export const pageType = defineType({
@@ -25,11 +25,21 @@ export const pageType = defineType({
     }),
 
     defineField({
+      name: 'body',
+      type: 'array',
+      title: 'Body',
+      description: 'Rendered before the sections \u2014 holds the prose migrated from WordPress',
+      of: bodyMembers,
+    }),
+
+    defineField({
       name: 'sections',
       type: 'array',
       title: 'Page Sections',
       of: sectionMembers,
     }),
+
+    wordpressIdField,
   ],
   // Because basicFields is used instead of defining the fields in every page/post type
   // a preview is need like the below so it looks proper on sanity.

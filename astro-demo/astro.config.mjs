@@ -2,7 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 import { createClient } from "@sanity/client";
 import sitemap from "@astrojs/sitemap";
-import node from "@astrojs/node";
+import vercel from "@astrojs/vercel";
 import sanity from "@sanity/astro";
 
 // Docs for redirects
@@ -37,7 +37,7 @@ export default defineConfig({
   },
   site: "https://sanity-astro-kappa.vercel.app/",
   output: "server",
-  adapter: node({ mode: "standalone" }),
+  adapter: vercel(),
   integrations: [
     sanity({
       projectId: "igodg8qe",

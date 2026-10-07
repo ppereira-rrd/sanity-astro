@@ -32,3 +32,7 @@
 node_modules/
 .vercel
 .env*
+
+# Astro build output
+astro-demo/dist
+astro-demo/.vercel
