@@ -1,0 +1,31 @@
+---
+/**
+ * Renders a `keyTakeawaysSection` — the summary list the WordPress migration
+ * pulls out of each post's "Key takeaways" / "Puntos clave" block.
+ */
+interface Props {
+  heading?: string;
+  items?: string[];
+}
+
+const { heading, items } = Astro.props;
+---
+
+{
+  items && items.length > 0 && (
+    <section class="my-10 rounded-xl border border-purple-200 bg-purple-50 p-6 md:p-8">
+      <h2 class="mb-4 text-sm font-semibold uppercase tracking-widest text-purple-700">
+        {heading || "Key takeaways"}
+      </h2>
+
+      <ul class="space-y-3">
+        {items.map((item) => (
+          <li class="flex gap-3 text-gray-700">
+            <span aria-hidden="true" class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-600" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}

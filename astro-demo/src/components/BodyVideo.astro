@@ -1,0 +1,65 @@
+---
+/**
+ * Renders a `video` block inside a post body. The migration stores whatever URL
+ * Elementor's video widget held, so handle YouTube, Vimeo and direct file URLs.
+ */
+import type { TypedObjectProps } from "astro-portabletext/types";
+
+type Props = TypedObjectProps;
+
+const { node } = Astro.props;
+
+const { url, title } = node as { url?: string; title?: string };
+
+/** Turns a watch/share URL into its embeddable equivalent, or null if it isn't one. */
+function toEmbedUrl(input: string): string | null {
+  try {
+    const { hostname, pathname, searchParams } = new URL(input);
+
+    if (hostname.endsWith("youtube.com")) {
+      const id = searchParams.get("v") ?? pathname.replace("/embed/", "");
+      return id ? `https://www.youtube.com/embed/${id}` : null;
+    }
+
+    if (hostname.endsWith("youtu.be")) {
+      return `https://www.youtube.com/embed/${pathname.slice(1)}`;
+    }
+
+    if (hostname.endsWith("vimeo.com")) {
+      const id = pathname.split("/").filter(Boolean).pop();
+      return id ? `https://player.vimeo.com/video/${id}` : null;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+const embedUrl = url ? toEmbedUrl(url) : null;
+---
+
+{
+  embedUrl ? (
+    <div class="my-8 aspect-video overflow-hidden rounded-xl">
+      <iframe
+        src={embedUrl}
+        title={title || "Video"}
+        class="h-full w-full"
+        loading="lazy"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowfullscreen
+      />
+    </div>
+  ) : (
+    url && (
+      <video
+        src={url}
+        title={title}
+        class="my-8 w-full rounded-xl"
+        controls
+        preload="metadata"
+      />
+    )
+  )
+}

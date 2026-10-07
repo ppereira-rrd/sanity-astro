@@ -9,10 +9,21 @@ import {
 } from "@sanity/image-url";
 import { PortableText } from "astro-portabletext";
 
+import BodyImage from "../../components/BodyImage.astro";
+import BodyVideo from "../../components/BodyVideo.astro";
+import KeyTakeawaysSection from "../../components/KeyTakeawaysSection.astro";
+
+// `basic.author` is a reference, so it has to be dereferenced to read the name and bio.
 const POST_QUERY = `*[
   _type == "post" &&
   basic.slug.current == $slug
-][0]`;
+][0]{
+  ...,
+  basic {
+    ...,
+    author->{name, bio}
+  }
+}`;
 
 const post = await sanityClient.fetch<SanityDocument>(POST_QUERY, Astro.params);
 
@@ -41,6 +52,14 @@ const urlFor = (source: SanityImageSource) =>
 const postImageUrl = post.basic?.featuredImage
   ? urlFor(post.basic.featuredImage)?.width(900).height(500).url()
   : null;
+
+// Images and videos the WordPress migration embedded in the body.
+const bodyComponents = {
+  type: {
+    image: BodyImage,
+    video: BodyVideo,
+  },
+};
 ---
 
 <Main
@@ -71,6 +90,7 @@ const postImageUrl = post.basic?.featuredImage
           post.basic?.publishedAt && (
             <p class="text-gray-500">
               Published {new Date(post.basic.publishedAt).toLocaleDateString()}
+              {post.basic?.author?.name && <> · By {post.basic.author.name}</>}
             </p>
           )
         }
@@ -96,9 +116,39 @@ const postImageUrl = post.basic?.featuredImage
 
       <div class="p-6 md:p-8 rounded-xl border border-gray-200">
         <div class="prose max-w-none">
-          {Array.isArray(post.body) && <PortableText value={post.body} />}
+          {
+            Array.isArray(post.body) && (
+              <PortableText value={post.body} components={bodyComponents} />
+            )
+          }
         </div>
       </div>
+
+      {
+        Array.isArray(post.sections) &&
+          post.sections.map((section: any) => {
+            switch (section._type) {
+              case "keyTakeawaysSection":
+                return <KeyTakeawaysSection {...section} />;
+
+              default:
+                return null;
+            }
+          })
+      }
+
+      {
+        post.basic?.author?.bio && (
+          <div class="mt-10 rounded-xl border border-gray-200 p-6">
+            <p class="mb-2 text-sm font-semibold uppercase tracking-widest text-purple-600">
+              About the author
+            </p>
+
+            <p class="font-semibold">{post.basic.author.name}</p>
+            <p class="mt-1 text-gray-600">{post.basic.author.bio}</p>
+          </div>
+        )
+      }
 
       <div class="text-center mt-10">
         <a

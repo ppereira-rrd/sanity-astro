@@ -1,7 +1,8 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 import { createClient } from "@sanity/client";
-
+import sitemap from "@astrojs/sitemap";
+import node from "@astrojs/node";
 import sanity from "@sanity/astro";
 
 // Docs for redirects
@@ -20,7 +21,7 @@ const redirectData = await client.fetch(
   `*[_type == "redirect"]{
 	  "from": from.current,
 	  "to": to.current
-	}`
+	}`,
 );
 
 // Create empty object to add our redirects to
@@ -34,12 +35,16 @@ export default defineConfig({
   vite: {
     plugins: [tailwindcss()],
   },
+  site: "https://sanity-astro-kappa.vercel.app/",
+  output: "server",
+  adapter: node({ mode: "standalone" }),
   integrations: [
     sanity({
       projectId: "igodg8qe",
       dataset: "production",
       useCdn: false, // for static builds
     }),
+    sitemap(),
   ],
   redirects, // pass the object we made above
 });

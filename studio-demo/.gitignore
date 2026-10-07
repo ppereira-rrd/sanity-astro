@@ -27,3 +27,6 @@
 
 # Dotenv and similar local-only files
 *.local
+
+# Migration previews and reports
+/scripts/.migration-output

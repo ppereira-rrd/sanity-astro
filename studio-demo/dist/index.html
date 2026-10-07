@@ -42,7 +42,9 @@
       // - If there are no subscribers, then we log the error to the console and render the error overlay.
       if (errorChannel.subscribers.length) {
         errorChannel.publish({error, params})
-      } else {
+      } else if (error) {
+        // Browsers fire some error events without an error object (a ResizeObserver loop,
+        // a cross-origin "Script error."), and there is nothing useful to show for them.
         console.error(error)
 
         _renderErrorOverlay(error, params)
@@ -165,7 +167,7 @@
     return true
   })
 })()
-</script><style>
+</script><link href="/static/sanity-oVMydQwP.css" rel="stylesheet"><style>
   @font-face {
     font-family: Inter;
     font-style: normal;
@@ -267,7 +269,7 @@
     margin: 0;
     -webkit-font-smoothing: antialiased;
   }
-</style><script type="application/json" id="__imports">{"imports":{"react-dom/client":"/vendor/react-dom/client-DMKI7XEq.mjs","react-dom":"/vendor/react-dom/index-IkT-jDgP.mjs","react-dom/package.json":"/vendor/react-dom/package.json-vYHbRDrE.mjs","react-dom/server":"/vendor/react-dom/server-BPI_OffV.mjs","react-dom/server.browser":"/vendor/react-dom/server.browser-Ddt4qfZ0.mjs","react-dom/static":"/vendor/react-dom/static-D7lDvPOR.mjs","react-dom/static.browser":"/vendor/react-dom/static.browser-BeTVidvD.mjs","react/compiler-runtime":"/vendor/react/compiler-runtime-pwKu406W.mjs","react":"/vendor/react/index-B1NpVzgh.mjs","react/jsx-dev-runtime":"/vendor/react/jsx-dev-runtime-DE3tgJ9y.mjs","react/jsx-runtime":"/vendor/react/jsx-runtime-VMk0Qk41.mjs","react/package.json":"/vendor/react/package.json-Bb8T97Wh.mjs","styled-components":"/vendor/styled-components/index-C9DBfEMR.mjs","styled-components/package.json":"/vendor/styled-components/package.json-CL2db1nc.mjs","sanity":"https://sanity-cdn.com/v1/modules/sanity/default/%5E6.17.0/t1790956470","sanity/":"https://sanity-cdn.com/v1/modules/sanity/default/%5E6.17.0/t1790956470/","@sanity/vision":"https://sanity-cdn.com/v1/modules/@sanity__vision/default/%5E6.17.0/t1790956470","@sanity/vision/":"https://sanity-cdn.com/v1/modules/@sanity__vision/default/%5E6.17.0/t1790956470/"},"css":["https://sanity-cdn.com/v1/modules/sanity/default/%5E6.17.0/t1790956470/index.css","https://sanity-cdn.com/v1/modules/@sanity__vision/default/%5E6.17.0/t1790956470/index.css"]}</script><script>
+</style><script type="application/json" id="__imports">{"imports":{"react-dom/client":"/vendor/react-dom/client-D9ihPKeo.mjs","react-dom":"/vendor/react-dom/index-Bcvc72F5.mjs","react-dom/package.json":"/vendor/react-dom/package.json-vYHbRDrE.mjs","react-dom/server":"/vendor/react-dom/server-DsQIL_IQ.mjs","react-dom/server.browser":"/vendor/react-dom/server.browser-813JB-6c.mjs","react-dom/static":"/vendor/react-dom/static-DfUQ60NC.mjs","react-dom/static.browser":"/vendor/react-dom/static.browser-BZ3BzJO6.mjs","react/compiler-runtime":"/vendor/react/compiler-runtime-DE27Qal-.mjs","react":"/vendor/react/index-Do2GDQlo.mjs","react/jsx-dev-runtime":"/vendor/react/jsx-dev-runtime-BbLnCGZP.mjs","react/jsx-runtime":"/vendor/react/jsx-runtime-Bxvf3dpQ.mjs","react/package.json":"/vendor/react/package.json-Bb8T97Wh.mjs","styled-components":"/vendor/styled-components/index-C9DBfEMR.mjs","styled-components/package.json":"/vendor/styled-components/package.json-CL2db1nc.mjs","sanity":"https://sanity-cdn.com/v1/modules/sanity/default/%5E6.18.0/t1791385977","sanity/":"https://sanity-cdn.com/v1/modules/sanity/default/%5E6.18.0/t1791385977/","@sanity/vision":"https://sanity-cdn.com/v1/modules/@sanity__vision/default/%5E6.18.0/t1791385977","@sanity/vision/":"https://sanity-cdn.com/v1/modules/@sanity__vision/default/%5E6.18.0/t1791385977/"},"css":["https://sanity-cdn.com/v1/modules/sanity/default/%5E6.18.0/t1791385977/index.css","https://sanity-cdn.com/v1/modules/@sanity__vision/default/%5E6.18.0/t1791385977/index.css"]}</script><script>
   // auto-generated script to add import map with timestamp
   const importsJson = document.getElementById('__imports')?.textContent;
   const { imports = {}, css = [], ...rest } = importsJson ? JSON.parse(importsJson) : {};
@@ -364,7 +366,7 @@
     document.head.appendChild(preloadEl);
   }
 </script><script src="https://core.sanity-cdn.com/bridge.js" async type="module" data-sanity-core></script>
-</head><body><div id="sanity"></div><script src="/static/sanity-BfTRddJ_.js" type="module"></script><noscript><div class="sanity-app-no-js__root"><div class="sanity-app-no-js__content"><style type="text/css">
+</head><body><div id="sanity"></div><script src="/static/sanity-B61sGjD8.js" type="module"></script><noscript><div class="sanity-app-no-js__root"><div class="sanity-app-no-js__content"><style type="text/css">
 .sanity-app-no-js__root {
   position: absolute;
   top: 0;

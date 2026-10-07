@@ -1,0 +1,54 @@
+---
+/**
+ * Renders an `image` block inside a post body — the inline images the WordPress
+ * migration lifts out of article content.
+ */
+import { sanityClient } from "sanity:client";
+import {
+  createImageUrlBuilder,
+  type SanityImageSource,
+} from "@sanity/image-url";
+import type { TypedObjectProps } from "astro-portabletext/types";
+
+type Props = TypedObjectProps;
+
+const { node } = Astro.props;
+
+const image = node as {
+  asset?: { _ref?: string };
+  alt?: string;
+  caption?: string;
+};
+
+const { projectId, dataset } = sanityClient.config();
+
+const src =
+  image.asset?._ref && projectId && dataset
+    ? createImageUrlBuilder({ projectId, dataset })
+        .image(image as SanityImageSource)
+        .width(900)
+        .fit("max")
+        .auto("format")
+        .url()
+    : null;
+---
+
+{
+  src && (
+    <figure class="my-8">
+      <img
+        src={src}
+        alt={image.alt || ""}
+        class="w-full rounded-xl"
+        loading="lazy"
+        decoding="async"
+      />
+
+      {image.caption && (
+        <figcaption class="mt-3 text-center text-sm text-gray-500">
+          {image.caption}
+        </figcaption>
+      )}
+    </figure>
+  )
+}
