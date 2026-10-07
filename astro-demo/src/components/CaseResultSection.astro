@@ -1,0 +1,66 @@
+---
+/**
+ * Renders a `caseResultSection`. The WordPress migration writes these as inline
+ * `caseResultItem` values lifted out of a page's own carousel, so they belong to
+ * this page alone.
+ */
+interface CaseResult {
+  amount?: string;
+  caseType?: string;
+  resultType?: string;
+  summary?: string;
+  title?: string;
+}
+
+interface Props {
+  heading?: string;
+  intro?: string;
+  caseResults?: CaseResult[];
+}
+
+const { heading, intro, caseResults } = Astro.props;
+---
+
+<section class="py-16 md:py-24 px-6">
+  <div class="max-w-6xl mx-auto">
+    {
+      heading && (
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight mb-4">
+          {heading}
+        </h2>
+      )
+    }
+
+    {intro && <p class="text-lg text-gray-600 mb-10 max-w-3xl">{intro}</p>}
+
+    {
+      caseResults && caseResults.length > 0 && (
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {caseResults.map((result) => (
+            <article class="border border-gray-200 rounded-xl p-6 flex flex-col">
+              {result.amount && (
+                <p class="text-3xl font-bold tracking-tight text-purple-600">
+                  {result.amount}
+                </p>
+              )}
+
+              {(result.caseType || result.resultType) && (
+                <p class="mt-2 text-sm font-semibold uppercase tracking-widest text-gray-500">
+                  {[result.caseType, result.resultType]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
+
+              {(result.summary || result.title) && (
+                <p class="mt-4 text-gray-600 leading-relaxed">
+                  {result.summary || result.title}
+                </p>
+              )}
+            </article>
+          ))}
+        </div>
+      )
+    }
+  </div>
+</section>

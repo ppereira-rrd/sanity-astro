@@ -2,9 +2,13 @@ import {defineField, defineType} from 'sanity'
 import {sameLanguageFilter} from '../fields/shared'
 
 /**
- * Pulls hand-picked Testimonial documents into a page or post. The picker is
- * filtered to the language of the document being edited, so a Spanish page can
- * only show Spanish testimonials.
+ * Testimonials on a page or post, either way round: a reference to a shared
+ * `testimonial` document when the same quote is used in several places, or a
+ * `testimonialItem` written here when it belongs to this page alone — which is what
+ * the WordPress migration lifts out of a page's own carousel.
+ *
+ * The reference picker is filtered to the language of the document being edited, so
+ * a Spanish page can only show Spanish testimonials.
  */
 export const testimonialSection = defineType({
   name: 'testimonialSection',
@@ -28,6 +32,7 @@ export const testimonialSection = defineType({
           to: [{type: 'testimonial'}],
           options: {filter: sameLanguageFilter},
         },
+        {type: 'testimonialItem'},
       ],
       validation: (rule) => rule.unique().min(1),
     }),

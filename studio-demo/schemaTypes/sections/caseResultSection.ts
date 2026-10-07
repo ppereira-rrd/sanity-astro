@@ -2,9 +2,13 @@ import {defineField, defineType} from 'sanity'
 import {sameLanguageFilter} from '../fields/shared'
 
 /**
- * Pulls hand-picked Case Result documents into a page or post. The picker is
- * filtered to the language of the document being edited, so a Spanish page can
- * only show Spanish case results.
+ * Case results on a page or post, either way round: a reference to a shared
+ * `caseResult` document when the same result is used in several places, or a
+ * `caseResultItem` written here when it belongs to this page alone — which is what
+ * the WordPress migration lifts out of a page's own carousel.
+ *
+ * The reference picker is filtered to the language of the document being edited, so
+ * a Spanish page can only show Spanish case results.
  */
 export const caseResultSection = defineType({
   name: 'caseResultSection',
@@ -35,6 +39,7 @@ export const caseResultSection = defineType({
           to: [{type: 'caseResult'}],
           options: {filter: sameLanguageFilter},
         },
+        {type: 'caseResultItem'},
       ],
       validation: (rule) => rule.unique().min(1),
     }),
@@ -44,13 +49,14 @@ export const caseResultSection = defineType({
     select: {
       heading: 'heading',
       first: 'caseResults.0.title',
+      firstAmount: 'caseResults.0.amount',
       count: 'caseResults.length',
     },
-    prepare({heading, first, count}) {
+    prepare({heading, first, firstAmount, count}) {
       const total = count ?? 0
 
       return {
-        title: heading || first || 'Case Result Section',
+        title: heading || first || firstAmount || 'Case Result Section',
         subtitle: `Case Results · ${total} selected`,
       }
     },

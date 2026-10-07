@@ -11,6 +11,7 @@ import CtaSection from "../components/CtaSection.astro";
 import FaqSection from "../components/FaqSection.astro";
 import FeatureGridSection from "../components/FeatureGridSection.astro";
 import TestimonialSection from "../components/TestimonialSection.astro";
+import CaseResultSection from "../components/CaseResultSection.astro";
 import ButtonBlock from "../components/ButtonBlock.astro";
 import KeyTakeawaysSection from "../components/KeyTakeawaysSection.astro";
 
@@ -83,6 +84,9 @@ if (!page) {
 
             case "testimonialSection":
               return <TestimonialSection {...section} />;
+
+            case "caseResultSection":
+              return <CaseResultSection {...section} />;
 
             case "button":
               return <ButtonBlock {...section} />;

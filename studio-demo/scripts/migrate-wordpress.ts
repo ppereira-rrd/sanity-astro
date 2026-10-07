@@ -1,16 +1,24 @@
 /**
- * Migrates WordPress blog posts and categories (Elementor + Polylang + Yoast) into Sanity.
+ * Migrates a WordPress site (Elementor + Polylang + Yoast) into Sanity.
  *
- *   npm run migrate:wordpress -- --dry-run --limit 5   # convert only, write preview JSON, no Sanity writes
- *   npm run migrate:wordpress -- --limit 5             # import the 5 newest posts
- *   npm run migrate:wordpress                          # import everything
+ *   npm run migrate:wordpress                                    # import everything this site has
+ *   npm run migrate:wordpress -- --dry-run --limit 5             # convert only, write preview JSON
+ *   npm run migrate:wordpress -- --site https://example.com      # a different client
+ *   npm run migrate:wordpress -- --only post,page                # just these content types
+ *   npm run migrate:wordpress -- --list                          # what this site exposes, then exit
  *
- * Posts and categories are both localized per document: each WordPress language gets its own
- * Sanity document carrying `language`, and Polylang's `translations` map is replayed as the
- * `translation.metadata` documents the document-internationalization plugin reads.
+ * Clients do not all run the same content types: one has `videos`, another has `our_team` and
+ * `case-result`, most have neither. Rather than hard-coding one site's shape, MIGRATIONS below
+ * declares every type this script knows how to convert, and each run asks WordPress which of
+ * them the site actually exposes (`wp/v2/types`) and skips the rest. Adding support for a new
+ * client is a new entry in that array, not a new branch in the code.
  *
- * Safe to rerun: posts and categories are matched on `wordpressId`, authors on slug, images on
- * their source URL, and translation links on the documents they reference.
+ * Translated types get one Sanity document per WordPress language, carrying `language`, and
+ * Polylang's `translations` map is replayed as the `translation.metadata` documents the
+ * document-internationalization plugin reads.
+ *
+ * Safe to rerun: every document is matched on `wordpressId`, authors on slug, images on their
+ * source URL, and translation links on the documents they reference.
  */
 import {randomUUID} from 'node:crypto'
 import {mkdirSync, writeFileSync} from 'node:fs'
@@ -22,14 +30,27 @@ import {getCliClient} from 'sanity/cli'
 import {schemaTypes} from '../schemaTypes'
 import {defaultLanguage, supportedLanguages} from '../schemaTypes/fields/shared'
 
-const WP_API = 'https://www.joestephenslaw.com/wp-json/wp/v2'
-const WP_HOSTS = ['joestephenslaw.com', 'www.joestephenslaw.com']
+const DEFAULT_SITE = 'https://www.joestephenslaw.com'
 const LANGUAGES = supportedLanguages.map((language) => language.id) as string[]
 
 const args = process.argv.slice(2)
+const flag = (name: string) => {
+  const index = args.indexOf(`--${name}`)
+  return index === -1 ? undefined : args[index + 1]
+}
+
 const DRY_RUN = args.includes('--dry-run')
-const limitIndex = args.indexOf('--limit')
-const LIMIT = limitIndex === -1 ? Infinity : Number(args[limitIndex + 1]) || Infinity
+const LIST_ONLY = args.includes('--list')
+const LIMIT = Number(flag('limit')) || Infinity
+const SITE = (flag('site') ?? DEFAULT_SITE).replace(/\/+$/, '')
+const WP_API = `${SITE}/wp-json/wp/v2`
+// Used to rewrite the site's own absolute links as relative ones; `www.` either way.
+const WP_HOSTS = (() => {
+  const host = new URL(SITE).hostname
+  return [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`]
+})()
+/** `--only post,page` restricts the run; empty means everything the site exposes. */
+const ONLY = new Set((flag('only') ?? '').split(',').map((name) => name.trim()).filter(Boolean))
 const OUTPUT_DIR = join(process.cwd(), 'scripts', '.migration-output')
 
 const client = getCliClient({apiVersion: '2026-10-01'})
@@ -101,6 +122,34 @@ interface WpPage extends Omit<WpPost, 'categories'> {
   parent?: number
 }
 
+/**
+ * The `videos` custom post type. Its body is empty — the pages are assembled from
+ * Elementor templates — so the only thing worth lifting besides the usual metadata
+ * is the embed URL Yoast records as `og_video`.
+ */
+interface WpVideo extends Omit<WpPost, 'categories'> {
+  yoast_head_json?: WpPost['yoast_head_json'] & {og_video?: string}
+}
+
+/** The `our_team` custom post type: an attorney profile, body and all. */
+type WpTeamMember = Omit<WpPost, 'categories'>
+
+/**
+ * The `case-result` custom post type. The money is in the title rather than a field,
+ * and the practice area is a `case-type` term.
+ */
+interface WpCaseResult extends Omit<WpPost, 'categories'> {
+  'case-type'?: number[]
+}
+
+/** Anything the generic runner can migrate: a WordPress object with an ID and a language. */
+interface WpItem {
+  id: number
+  slug: string
+  lang?: string
+  translations?: Record<string, number>
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -118,6 +167,16 @@ const slugify = (text: string) =>
     .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
+
+/**
+ * Some Yoast descriptions are a slug someone pasted into the wrong box
+ * ("1377000-veredicto-a-favor-de-una-victima"). Never a usable excerpt, so ignore them.
+ */
+const looksLikeSlug = (text: string) => !/\s/.test(text.trim()) && text.includes('-')
+
+/** The Yoast description, unless whoever filled it in put a slug there. */
+const metaDescription = (yoast: {description?: string} = {}) =>
+  yoast.description && !looksLikeSlug(yoast.description) ? yoast.description : ''
 
 const truncate = (text: string, max: number) =>
   text.length <= max ? text : `${text.slice(0, max - 1).replace(/\s+\S*$/, '')}…`
@@ -162,6 +221,43 @@ async function fetchAllPaged<T>(resource: string, query = '', limit = Infinity):
 }
 
 const EMBED = '&_embed=author,wp:featuredmedia'
+
+/**
+ * Which resources this site actually exposes. Clients differ — one publishes `videos`,
+ * another `our_team` and `case-result` — so every run asks rather than assumes.
+ *
+ * Both endpoints are needed: `types` lists post types only, so a taxonomy like
+ * `categories` is absent from it and would look like a site that has no categories.
+ */
+async function siteResources(): Promise<Set<string>> {
+  const bases = await Promise.all(
+    ['types', 'taxonomies'].map(async (endpoint) => {
+      const response = await withRetry(endpoint, () => fetch(`${WP_API}/${endpoint}`))
+      if (!response.ok) throw new Error(`WordPress API ${response.status} on ${endpoint}`)
+      const entries = (await response.json()) as Record<string, {rest_base?: string}>
+      return Object.values(entries).map((entry) => entry.rest_base)
+    }),
+  )
+
+  return new Set(bases.flat().filter((base): base is string => Boolean(base)))
+}
+
+/**
+ * Term ID → name, for the taxonomies a custom post type hangs its metadata on. Takes
+ * the same candidate list as a content type, and a taxonomy the site doesn't expose
+ * just means no label to attach.
+ */
+async function fetchTerms(resources: string[]): Promise<Map<number, string>> {
+  for (const resource of resources) {
+    try {
+      const terms = await fetchAllPaged<{id: number; name: string}>(resource)
+      if (terms.length) return new Map(terms.map((term) => [term.id, decode(term.name)]))
+    } catch {
+      // Try the next spelling.
+    }
+  }
+  return new Map()
+}
 
 // ---------------------------------------------------------------------------
 // Images
@@ -238,10 +334,25 @@ interface RawCta {
   imageAlt: string
 }
 
+/** A case result or testimonial lifted out of one page's own carousel. */
+interface RawCaseResult {
+  amount: string
+  caseType: string
+  resultType: string
+  summary: string
+}
+
+interface RawTestimonial {
+  quote: string
+  name: string
+}
+
 interface CleanResult {
   html: string
   keyTakeaways: {heading: string; items: string[]} | null
   ctas: RawCta[]
+  caseResults: RawCaseResult[]
+  testimonials: RawTestimonial[]
   dropped: string[]
 }
 
@@ -363,11 +474,72 @@ function extractCta(root: Element): RawCta | null {
   }
 }
 
+const CAROUSEL = '[data-widget_type^="nested-carousel"]'
+const SLIDE = '.swiper-slide'
+const WIDGET = '[data-widget_type]'
+
+/** A heading that is nothing but money: "$9,600,000". The summary says "$9.6 million". */
+const ONLY_AMOUNT = /^\$\s?[\d,]+(?:\.\d+)?(?:\s*(?:million|billion|thousand))?$/i
+const RESULT_WORD = /\b(verdict|settlement|recovery|veredicto|acuerdo)\b/i
+
+/** The visible text of each widget in a slide, in document order, blanks removed. */
+const slideParts = (slide: Element) =>
+  Array.from(slide.querySelectorAll(WIDGET))
+    .map((widget) => flatten(widget.textContent))
+    .filter(Boolean)
+
+/**
+ * A carousel slide holding a case result: a standalone money heading, usually with the
+ * result type and practice area beside it, and a paragraph of narrative.
+ */
+function extractCaseResult(parts: string[]): RawCaseResult | null {
+  const amount = parts.find((part) => ONLY_AMOUNT.test(part))
+  if (!amount) return null
+
+  const rest = parts.filter((part) => part !== amount)
+  // The narrative is the long one; everything else is a label.
+  const summary = rest.reduce((longest, part) => (part.length > longest.length ? part : longest), '')
+  const labels = rest.filter((part) => part !== summary)
+
+  // Labels read "VERDICT", "Truck Accident", or both at once as "Car Accident Settlement".
+  const withWord = labels.find((label) => RESULT_WORD.test(label))
+  const resultWord = withWord ? RESULT_WORD.exec(withWord)![1] : ''
+  const resultType = resultWord
+    ? resultWord[0].toUpperCase() + resultWord.slice(1).toLowerCase()
+    : ''
+  const caseType =
+    labels.find((label) => label !== withWord) ??
+    flatten(withWord?.replace(RESULT_WORD, '')) ??
+    ''
+
+  return {amount, caseType, resultType, summary: summary.length > 40 ? summary : ''}
+}
+
+/**
+ * A carousel slide holding a testimonial: a quote and a short attribution. A slide with
+ * only prose and nobody's name is some other kind of carousel, and is left alone.
+ */
+function extractTestimonial(parts: string[]): RawTestimonial | null {
+  if (parts.length < 2) return null
+  const quote = parts.reduce((longest, part) => (part.length > longest.length ? part : longest), '')
+  if (quote.length < 60) return null
+
+  // An attribution is a name, not a sentence.
+  const name = parts.find(
+    (part) => part !== quote && part.length <= 60 && part.split(' ').length <= 5,
+  )
+  if (!name) return null
+
+  return {quote, name}
+}
+
 function cleanElementorHtml(html: string): CleanResult {
   const doc = new JSDOM(`<body>${html}</body>`).window.document
   const dropped: string[] = []
   let keyTakeaways: CleanResult['keyTakeaways'] = null
   const ctas: RawCta[] = []
+  const caseResults: RawCaseResult[] = []
+  const testimonials: RawTestimonial[] = []
 
   doc.querySelectorAll('svg, script, style, noscript, form').forEach((el) => el.remove())
 
@@ -421,6 +593,34 @@ function cleanElementorHtml(html: string): CleanResult {
   // Calls to action: a promo container built around a button widget. Lifted out before
   // the button widget itself is dropped below, and deduped because the same block is
   // often repeated down a page.
+  /*
+   * Carousels: a page builds its own case results and testimonials into one, so they
+   * belong to this page alone rather than to the shared library. Taken before the CTA
+   * pass so a carousel can't be swallowed as part of a promo block.
+   */
+  for (const carousel of Array.from(doc.querySelectorAll(CAROUSEL))) {
+    const slides = Array.from(carousel.querySelectorAll(SLIDE))
+    const parsed = slides.map((slide) => {
+      const parts = slideParts(slide)
+      const caseResult = extractCaseResult(parts)
+      return caseResult
+        ? ({kind: 'caseResult', caseResult} as const)
+        : ({kind: 'testimonial', testimonial: extractTestimonial(parts)} as const)
+    })
+
+    // One carousel holds one kind of thing; a mixed read means the guess was wrong.
+    const found = parsed.filter((slide) =>
+      slide.kind === 'caseResult' ? true : Boolean(slide.testimonial),
+    )
+    if (!found.length) continue
+
+    for (const slide of found) {
+      if (slide.kind === 'caseResult') caseResults.push(slide.caseResult)
+      else if (slide.testimonial) testimonials.push(slide.testimonial)
+    }
+    carousel.remove()
+  }
+
   // A call to action is a sidebar next to the article, not the article itself.
   const maxCtaText = Math.max(800, Math.round(flatten(doc.body.textContent).length * 0.3))
   const seenCtas = new Set<string>()
@@ -487,7 +687,7 @@ function cleanElementorHtml(html: string): CleanResult {
     a.setAttribute('href', toRelativeHref(a.getAttribute('href')!))
   })
 
-  return {html: doc.body.innerHTML, keyTakeaways, ctas, dropped}
+  return {html: doc.body.innerHTML, keyTakeaways, ctas, caseResults, testimonials, dropped}
 }
 
 // ---------------------------------------------------------------------------
@@ -646,7 +846,8 @@ const allBlocks = (sections: Array<Record<string, unknown>>): TypedObject[] =>
  * left to Portable Text, and collect the blocks that become `sections`.
  */
 async function convertContent(html: string, title: string) {
-  const {html: clean, keyTakeaways, ctas, dropped} = cleanElementorHtml(html)
+  const {html: clean, keyTakeaways, ctas, caseResults, testimonials, dropped} =
+    cleanElementorHtml(html)
   const {lead, sections: headingSections} = splitAtHeadings(await htmlToBody(clean, title))
 
   // The whole document, in render order.
@@ -656,10 +857,41 @@ async function convertContent(html: string, title: string) {
       : []),
     ...(lead.length ? [{_key: key(), _type: 'textSection', body: lead}] : []),
     ...headingSections,
+    // Written inline rather than as shared documents: a page's own carousel is its own.
+    ...(caseResults.length
+      ? [
+          {
+            _key: key(),
+            _type: 'caseResultSection',
+            caseResults: caseResults.map((result) => ({
+              _key: key(),
+              _type: 'caseResultItem',
+              amount: result.amount,
+              ...(result.caseType ? {caseType: result.caseType} : {}),
+              ...(result.resultType ? {resultType: result.resultType} : {}),
+              ...(result.summary ? {summary: result.summary} : {}),
+            })),
+          },
+        ]
+      : []),
+    ...(testimonials.length
+      ? [
+          {
+            _key: key(),
+            _type: 'testimonialSection',
+            testimonials: testimonials.map((testimonial) => ({
+              _key: key(),
+              _type: 'testimonialItem',
+              quote: testimonial.quote,
+              ...(testimonial.name ? {name: testimonial.name} : {}),
+            })),
+          },
+        ]
+      : []),
     ...(await Promise.all(ctas.map((cta) => ctaSection(cta, title)))),
   ]
 
-  return {sections, keyTakeaways, ctas, lead, headingSections, dropped}
+  return {sections, keyTakeaways, ctas, caseResults, testimonials, lead, headingSections, dropped}
 }
 
 const seoFields = (yoast: WpPost['yoast_head_json'] = {}) => ({
@@ -682,6 +914,9 @@ async function existingIdsByWpId(type: string) {
 // ---------------------------------------------------------------------------
 // Authors
 // ---------------------------------------------------------------------------
+
+/** Filled in by migrateCategories so posts can reference their category. */
+let categoryIdByWpId = new Map<number, string>()
 
 const authorIds = new Map<string, string>()
 
@@ -841,15 +1076,92 @@ async function migrateCategories(report: Array<Record<string, unknown>>) {
 
   return idByWpId
 }
-
 // ---------------------------------------------------------------------------
-// Pages
+// Content types
 // ---------------------------------------------------------------------------
 
 /**
- * WordPress pages are hierarchical, so the leaf slug is not unique — several branches
- * have a `car-accident` child. The Sanity slug keeps the whole path. Polylang prefixes
- * Spanish URLs with `/es/`, which is dropped: the language lives on the document.
+ * A `rest_base` to look for, optionally pinned to a language — a Spanish-only post type
+ * has no `lang` of its own, so the alias is the only thing that says what it holds.
+ */
+type ResourceAlias = string | {resource: string; language: string}
+
+const aliasName = (alias: ResourceAlias) => (typeof alias === 'string' ? alias : alias.resource)
+
+/** Everything the migration knows about one WordPress record. */
+interface Built {
+  doc: Record<string, unknown> & {_type: string; language?: string}
+  /** Extra columns for this type's rows in _report.json. */
+  report: Record<string, unknown>
+}
+
+/**
+ * One WordPress content type and how it becomes a Sanity document. Adding support for a
+ * client's custom post type means adding an entry to MIGRATIONS, not editing the runner.
+ */
+interface Migration<T extends WpItem> {
+  /** What `--only` matches and what the logs call it. */
+  name: string
+  /**
+   * `rest_base` candidates under wp/v2. The same content type is named differently from
+   * client to client — `our_team` on one site, `attorneys` or `team` on the next — so a
+   * run migrates every one of these the site exposes, not just the first. A site can have
+   * two at once: cordiscosaile.com publishes English case results under `case-result` and
+   * Spanish ones under `resultados_de_casos`. Those translated post types carry no Polylang
+   * language, so the alias states it.
+   */
+  resources: ResourceAlias[]
+  /** The Sanity document type. */
+  type: string
+  /** Polylang gives this type one document per language, and translations get linked. */
+  translated: boolean
+  slug: (item: T) => string
+  /** Fetched once before the loop — taxonomy terms and the like. */
+  prepare?: () => Promise<void>
+  build: (item: T, slug: string, language: string) => Promise<Built>
+}
+
+/** title / slug / excerpt / publishedAt / author / featuredImage, shared by the page-like types. */
+async function basicFields(item: WpPost, title: string, slug: string) {
+  const media = item._embedded?.['wp:featuredmedia']?.[0]
+  const featuredAssetId = media?.source_url ? await uploadImage(media.source_url) : null
+  const excerpt = truncate(
+    metaDescription(item.yoast_head_json) || decode(item.excerpt.rendered),
+    300,
+  )
+
+  return {
+    _type: 'basicFields',
+    title,
+    slug: {_type: 'slug', current: slug},
+    ...(excerpt ? {excerpt} : {}),
+    publishedAt: new Date(`${item.date_gmt}Z`).toISOString(),
+    author: await authorRef(item._embedded?.author?.[0]),
+    ...(featuredAssetId
+      ? {featuredImage: imageField(featuredAssetId, media?.alt_text?.trim() || title)}
+      : {}),
+  }
+}
+
+/** The columns every converted article contributes to the report. */
+const contentReport = (converted: Awaited<ReturnType<typeof convertContent>>) => {
+  const blocks = allBlocks(converted.sections)
+  return {
+    blocks: blocks.length,
+    headingSections: converted.headingSections.length,
+    lede: converted.lead.length,
+    keyTakeaways: converted.keyTakeaways?.items.length ?? 0,
+    ctas: converted.ctas.length,
+    caseResults: converted.caseResults.length,
+    testimonials: converted.testimonials.length,
+    buttons: blocks.filter((block) => block._type === 'button').length,
+    dropped: converted.dropped,
+  }
+}
+
+/**
+ * WordPress nests pages, and leaf slugs repeat across branches (`car-accident` lives under
+ * several parents), so the slug is the full path with Polylang's language prefix removed.
  */
 function pagePath(page: WpPage): string {
   const path = new URL(page.link).pathname.replace(/^\/+|\/+$/g, '')
@@ -857,77 +1169,260 @@ function pagePath(page: WpPage): string {
   return (path.startsWith(prefix) ? path.slice(prefix.length) : path) || page.slug
 }
 
-async function migratePages(report: Array<Record<string, unknown>>) {
-  console.log(`${DRY_RUN ? '[dry run] ' : ''}Fetching WordPress pages…`)
-  const all = await fetchAllPaged<WpPage>('pages', EMBED, LIMIT)
-  const pages = all.filter((page) => LANGUAGES.includes(page.lang ?? ''))
-  const skipped = all.length - pages.length
-  console.log(`Found ${pages.length} pages${skipped ? ` (${skipped} skipped: no language)` : ''}`)
+/**
+ * Case results put the money in the title rather than a field: "$200,000 Recovered for…",
+ * or, on a Spanish post type, "Veredicto de 1,377,000 dólares a favor de…".
+ */
+const AMOUNT =
+  /\$\s?[\d,]+(?:\.\d+)?(?:\s*(?:million|billion|thousand|millones?))?|[\d,]+(?:\.\d+)?\s*(?:millones?\s*de\s*)?d[óo]lares/i
 
-  const existing = await existingIdsByWpId('page')
+/** Most titles say "Recovered", which is neither — so these only fire when stated. */
+const VERDICT = /verdicto|veredicto|verdict/i
+const SETTLEMENT = /settle|acuerdo|arreglo/i
+/** Yoast titles a profile "Name - Role | Firm", which is the only place the role appears. */
+const ROLE = /\s[-–—]\s([^|]+?)\s*(?:\||$)/
+
+/** Resolved in `prepare` so each case result can name its practice area. */
+let caseTypeTerms = new Map<number, string>()
+
+const MIGRATIONS: Array<Migration<never>> = [
+  {
+    name: 'posts',
+    resources: ['posts'],
+    type: 'post',
+    translated: true,
+    slug: (post: WpPost) => post.slug,
+    async build(post: WpPost, slug: string, language: string) {
+      const title = decode(post.title.rendered)
+      const converted = await convertContent(post.content.rendered, title)
+
+      // Posts carry several terms; Sanity's `category` holds one. Polylang keeps terms
+      // per-language, so the first one that resolved is already the right language.
+      const categoryId = (post.categories ?? [])
+        .map((wpId) => categoryIdByWpId.get(wpId))
+        .find((id): id is string => Boolean(id))
+
+      return {
+        doc: {
+          _type: 'post',
+          language,
+          basic: await basicFields(post, title, slug),
+          ...(categoryId ? {category: {_type: 'reference', _ref: categoryId}} : {}),
+          seo: seoFields(post.yoast_head_json),
+          ...(converted.sections.length ? {sections: converted.sections} : {}),
+          wordpressId: post.id,
+        },
+        report: {category: post.categories?.[0] ?? null, ...contentReport(converted)},
+      }
+    },
+  } as unknown as Migration<never>,
+
+  {
+    name: 'pages',
+    resources: ['pages'],
+    type: 'page',
+    translated: true,
+    slug: (page: WpPage) => pagePath(page),
+    async build(page: WpPage, slug: string, language: string) {
+      const title = decode(page.title.rendered)
+      const converted = await convertContent(page.content.rendered, title)
+
+      return {
+        doc: {
+          _type: 'page',
+          language,
+          basic: await basicFields(page, title, slug),
+          seo: seoFields(page.yoast_head_json),
+          ...(converted.sections.length ? {sections: converted.sections} : {}),
+          wordpressId: page.id,
+        },
+        report: {parent: page.parent || null, ...contentReport(converted)},
+      }
+    },
+  } as unknown as Migration<never>,
+
+  {
+    name: 'videos',
+    resources: ['videos', 'video'],
+    type: 'videos',
+    // Polylang reports no language on any of them, so there is nothing to link.
+    translated: false,
+    slug: (video: WpVideo) => video.slug,
+    async build(video: WpVideo, slug: string, language: string) {
+      const title = decode(video.title.rendered)
+      // Empty today, but convert it anyway so a transcript added in WordPress carries over.
+      const {html: clean, dropped} = cleanElementorHtml(video.content.rendered)
+      const transcript = await htmlToBody(clean, title)
+
+      return {
+        doc: {
+          _type: 'videos',
+          language,
+          basic: await basicFields(video, title, slug),
+          videoUrl: video.yoast_head_json?.og_video,
+          ...(transcript.length ? {transcript} : {}),
+          seo: seoFields(video.yoast_head_json),
+          wordpressId: video.id,
+        },
+        report: {
+          videoUrl: video.yoast_head_json?.og_video,
+          transcript: transcript.length,
+          dropped,
+        },
+      }
+    },
+  } as unknown as Migration<never>,
+
+  {
+    name: 'attorneys',
+    resources: ['our_team', 'our-team', 'attorneys', 'attorney', 'team'],
+    type: 'attorney',
+    translated: false,
+    slug: (member: WpTeamMember) => member.slug,
+    async build(member: WpTeamMember, slug: string, language: string) {
+      const name = decode(member.title.rendered)
+      const yoast = member.yoast_head_json ?? {}
+      const {html: clean, dropped} = cleanElementorHtml(member.content.rendered)
+      // `bio` holds prose; a profile has no headings worth turning into sections.
+      const bio = await htmlToBody(clean, name)
+
+      const media = member._embedded?.['wp:featuredmedia']?.[0]
+      const photoAssetId = media?.source_url ? await uploadImage(media.source_url) : null
+      const role = flatten(ROLE.exec(decode(yoast.title ?? ''))?.[1])
+
+      return {
+        doc: {
+          _type: 'attorney',
+          language,
+          name,
+          slug: {_type: 'slug', current: slug},
+          ...(role && role !== name ? {role} : {}),
+          ...(photoAssetId ? {photo: imageField(photoAssetId, media?.alt_text?.trim() || name)} : {}),
+          ...(yoast.description ? {shortBio: truncate(yoast.description, 300)} : {}),
+          ...(bio.length ? {bio} : {}),
+          seo: seoFields(yoast),
+          wordpressId: member.id,
+        },
+        report: {role: role || null, bio: bio.length, photo: Boolean(photoAssetId), dropped},
+      }
+    },
+  } as unknown as Migration<never>,
+
+  {
+    name: 'case-results',
+    resources: [
+      'case-result',
+      'case-results',
+      'results',
+      'result',
+      {resource: 'resultados_de_casos', language: 'es'},
+      {resource: 'resultados-de-casos', language: 'es'},
+    ],
+    type: 'caseResult',
+    translated: false,
+    slug: (result: WpCaseResult) => result.slug,
+    prepare: async () => {
+      caseTypeTerms = await fetchTerms(['case-type', 'case-types', 'case_type', 'practice-area'])
+    },
+    async build(result: WpCaseResult, slug: string, language: string) {
+      const title = decode(result.title.rendered)
+      const yoast = result.yoast_head_json ?? {}
+      // Non-breaking spaces show up mid-title, so normalise before looking for the money.
+      const amount = flatten(AMOUNT.exec(title.replace(/ /g, ' '))?.[0])
+      const caseType = (result['case-type'] ?? [])
+        .map((termId) => caseTypeTerms.get(termId))
+        .find((name): name is string => Boolean(name))
+      // The body's opening lines are a better summary than a slug in the Yoast box.
+      const summary = truncate(
+        metaDescription(yoast) ||
+          decode(result.excerpt?.rendered ?? '') ||
+          flatten(JSDOM.fragment(`<div>${result.content.rendered}</div>`).textContent),
+        400,
+      )
+
+      return {
+        doc: {
+          _type: 'caseResult',
+          language,
+          title,
+          ...(amount ? {amount} : {}),
+          ...(caseType ? {caseType} : {}),
+          // Kept in English on purpose: this classifies, so it has to group across languages.
+          ...(VERDICT.test(title)
+            ? {resultType: 'Verdict'}
+            : SETTLEMENT.test(title)
+              ? {resultType: 'Settlement'}
+              : {}),
+          year: new Date(`${result.date_gmt}Z`).getUTCFullYear(),
+          ...(summary ? {summary} : {}),
+          wordpressId: result.id,
+        },
+        report: {amount: amount || null, caseType: caseType ?? null, summary: summary.length},
+      }
+    },
+  } as unknown as Migration<never>,
+]
+
+/**
+ * Fetch, convert and save one content type. Everything that differs between types lives in
+ * the MIGRATIONS entry; everything that doesn't — paging, the language filter, dry-run
+ * previews, matching on `wordpressId`, translation links — happens here, once.
+ */
+async function runMigration<T extends WpItem>(
+  migration: Migration<T>,
+  alias: ResourceAlias,
+  report: Array<Record<string, unknown>>,
+) {
+  const resource = aliasName(alias)
+  // A language on the alias wins: a Spanish-only post type has no `lang` to read.
+  const pinned = typeof alias === 'string' ? undefined : alias.language
+
+  console.log(`${DRY_RUN ? '[dry run] ' : ''}Fetching WordPress ${migration.name} (${resource})…`)
+  const all = await fetchAllPaged<T>(resource, EMBED, LIMIT)
+  const items = migration.translated
+    ? all.filter((item) => LANGUAGES.includes(item.lang ?? ''))
+    : all
+  const skipped = all.length - items.length
+  console.log(
+    `Found ${items.length} ${migration.name}${skipped ? ` (${skipped} skipped: no language)` : ''}`,
+  )
+  if (!items.length) return
+
+  await migration.prepare?.()
+
+  const existing = await existingIdsByWpId(migration.type)
   const idByWpId = new Map<number, string>()
 
-  for (const [index, page] of pages.entries()) {
-    const title = decode(page.title.rendered)
-    const slug = pagePath(page)
-    console.log(`[${index + 1}/${pages.length}] ${page.lang} ${slug}`)
+  for (const [index, item] of items.entries()) {
+    const slug = migration.slug(item)
+    const language = pinned ?? item.lang ?? defaultLanguage
+    console.log(`[${index + 1}/${items.length}] ${language} ${slug}`)
 
-    const {sections, keyTakeaways, ctas, lead, headingSections, dropped} = await convertContent(
-      page.content.rendered,
-      title,
-    )
-    const blocks = allBlocks(sections)
-
-    const media = page._embedded?.['wp:featuredmedia']?.[0]
-    const featuredAssetId = media?.source_url ? await uploadImage(media.source_url) : null
-    const yoast = page.yoast_head_json ?? {}
-    const excerpt = truncate(yoast.description || decode(page.excerpt.rendered), 300)
-
-    const doc = {
-      _type: 'page',
-      language: page.lang,
-      basic: {
-        _type: 'basicFields',
-        title,
-        slug: {_type: 'slug', current: slug},
-        ...(excerpt ? {excerpt} : {}),
-        publishedAt: new Date(`${page.date_gmt}Z`).toISOString(),
-        author: await authorRef(page._embedded?.author?.[0]),
-        ...(featuredAssetId
-          ? {featuredImage: imageField(featuredAssetId, media?.alt_text?.trim() || title)}
-          : {}),
-      },
-      seo: seoFields(yoast),
-      ...(sections.length ? {sections} : {}),
-      wordpressId: page.id,
-    }
+    const {doc, report: row} = await migration.build(item, slug, language)
 
     report.push({
-      type: 'page',
-      wordpressId: page.id,
+      type: migration.type,
+      wordpressId: item.id,
       slug,
-      language: page.lang,
-      parent: page.parent || null,
-      blocks: blocks.length,
-      headingSections: headingSections.length,
-      lede: lead.length,
-      keyTakeaways: keyTakeaways?.items.length ?? 0,
-      ctas: ctas.length,
-      buttons: blocks.filter((block) => block._type === 'button').length,
-      dropped,
+      language: doc.language,
+      resource,
+      ...row,
     })
 
     if (DRY_RUN) {
-      writePreview(`page-${page.lang}-${slug.replace(/\//g, '--')}.json`, doc)
+      writePreview(`${migration.type}-${doc.language}-${slug.replace(/\//g, '--')}.json`, doc)
       continue
     }
 
-    const id = existing.get(page.id) ?? randomUUID()
-    await withRetry(`save page ${slug}`, () => client.createOrReplace({...doc, _id: id}))
-    idByWpId.set(page.id, id)
+    // Pick the ID before saving so a retry after a dropped response overwrites instead of duplicating.
+    const id = existing.get(item.id) ?? randomUUID()
+    await withRetry(`save ${migration.type} ${slug}`, () =>
+      client.createOrReplace({...doc, _id: id}),
+    )
+    idByWpId.set(item.id, id)
   }
 
-  await linkTranslations(pages, 'page', idByWpId)
+  if (migration.translated) await linkTranslations(items, migration.type, idByWpId)
 }
 
 // ---------------------------------------------------------------------------
@@ -935,91 +1430,43 @@ async function migratePages(report: Array<Record<string, unknown>>) {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  console.log(`Site: ${SITE}`)
+  const available = await siteResources()
+
+  // Every candidate name this site exposes, because a site can publish one content type
+  // under two of them at once — English under one, Spanish under another.
+  const resolved = MIGRATIONS.map((migration) => ({
+    migration,
+    aliases: migration.resources.filter((alias) => available.has(aliasName(alias))),
+  }))
+
+  const planned = resolved.filter(
+    (entry) => entry.aliases.length && (!ONLY.size || ONLY.has(entry.migration.name)),
+  )
+  const unavailable = resolved.filter((entry) => !entry.aliases.length)
+
+  console.log(
+    `Migrating: ${planned.map((entry) => `${entry.migration.name} (${entry.aliases.map(aliasName).join(' + ')})`).join(', ') || 'nothing'}`,
+  )
+  if (unavailable.length) {
+    console.log(
+      `Not on this site: ${unavailable.map((entry) => `${entry.migration.name} (looked for ${entry.migration.resources.map(aliasName).join(', ')})`).join('; ')}`,
+    )
+  }
+  if (LIST_ONLY) return
+
   const report: Array<Record<string, unknown>> = []
 
-  const categoryIdByWpId = await migrateCategories(report)
-
-  console.log(`${DRY_RUN ? '[dry run] ' : ''}Fetching WordPress posts…`)
-  const posts = (await fetchAllPaged<WpPost>('posts', EMBED, LIMIT)).filter((post) =>
-    LANGUAGES.includes(post.lang ?? ''),
-  )
-  console.log(`Found ${posts.length} posts`)
-
-  const existing = await existingIdsByWpId('post')
-
-  const sanityIdByWpId = new Map<number, string>()
-
-  for (const [index, post] of posts.entries()) {
-    const title = decode(post.title.rendered)
-    console.log(`[${index + 1}/${posts.length}] ${post.lang} ${post.slug}`)
-
-    const {sections, keyTakeaways, ctas, lead, headingSections, dropped} = await convertContent(
-      post.content.rendered,
-      title,
-    )
-    const blocks = allBlocks(sections)
-
-    const media = post._embedded?.['wp:featuredmedia']?.[0]
-    const featuredAssetId = media?.source_url ? await uploadImage(media.source_url) : null
-    const yoast = post.yoast_head_json ?? {}
-    const excerpt = truncate(yoast.description || decode(post.excerpt.rendered), 300)
-
-    // Posts carry several terms; Sanity's `category` holds one. Polylang keeps terms
-    // per-language, so the first one that resolved is already the right language.
-    const categoryId = (post.categories ?? [])
-      .map((wpId) => categoryIdByWpId.get(wpId))
-      .find((id): id is string => Boolean(id))
-
-    const doc = {
-      _type: 'post',
-      language: post.lang,
-      // title/slug/excerpt/publishedAt/author/featuredImage all live under `basic`.
-      basic: {
-        _type: 'basicFields',
-        title,
-        slug: {_type: 'slug', current: post.slug},
-        ...(excerpt ? {excerpt} : {}),
-        publishedAt: new Date(`${post.date_gmt}Z`).toISOString(),
-        author: await authorRef(post._embedded?.author?.[0]),
-        ...(featuredAssetId
-          ? {featuredImage: imageField(featuredAssetId, media?.alt_text?.trim() || title)}
-          : {}),
-      },
-      ...(categoryId ? {category: {_type: 'reference', _ref: categoryId}} : {}),
-      seo: seoFields(yoast),
-      ...(sections.length ? {sections} : {}),
-      wordpressId: post.id,
-    }
-
-    report.push({
-      type: 'post',
-      wordpressId: post.id,
-      slug: post.slug,
-      language: post.lang,
-      blocks: blocks.length,
-      headingSections: headingSections.length,
-      lede: lead.length,
-      category: post.categories?.[0] ?? null,
-      keyTakeaways: keyTakeaways?.items.length ?? 0,
-      ctas: ctas.length,
-      buttons: blocks.filter((block) => block._type === 'button').length,
-      dropped,
-    })
-
-    if (DRY_RUN) {
-      writePreview(`${post.lang}-${post.slug}.json`, doc)
-      continue
-    }
-
-    // Pick the ID before saving so a retry after a dropped response overwrites instead of duplicating.
-    const id = existing.get(post.id) ?? randomUUID()
-    await withRetry(`save ${post.slug}`, () => client.createOrReplace({...doc, _id: id}))
-    sanityIdByWpId.set(post.id, id)
+  // Categories first: posts reference them.
+  if (available.has('categories') && planned.some((entry) => entry.migration.type === 'post')) {
+    categoryIdByWpId = await migrateCategories(report)
   }
 
-  await linkTranslations(posts, 'post', sanityIdByWpId)
-
-  await migratePages(report)
+  for (const {migration, aliases} of planned) {
+    for (const alias of aliases) {
+      await runMigration(migration, alias, report)
+    }
+  }
 
   writePreview('_report.json', report)
   console.log(`Done. Report: ${join(OUTPUT_DIR, '_report.json')}`)

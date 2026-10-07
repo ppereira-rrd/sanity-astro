@@ -1,6 +1,6 @@
 import {defineField, defineType} from 'sanity'
 import {StarIcon} from '@sanity/icons/Star'
-import {languageField} from '../fields/shared'
+import {languageField, wordpressIdField} from '../fields/shared'
 
 /**
  * One document per language, linked as translations by the
@@ -49,6 +49,7 @@ export const caseResultType = defineType({
       name: 'summary',
       type: 'text',
     }),
+    wordpressIdField,
   ],
   preview: {
     select: {

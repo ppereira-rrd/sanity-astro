@@ -19,6 +19,7 @@ export const defaultLanguage = supportedLanguages[0].id
 export const translatedTypes = [
   'post',
   'page',
+  'videos',
   'category',
   'caseResult',
   'attorney',

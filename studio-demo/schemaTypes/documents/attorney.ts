@@ -1,6 +1,6 @@
 import {defineField, defineType} from 'sanity'
 import {UsersIcon} from '@sanity/icons/Users'
-import {languageField} from '../fields/shared'
+import {bodyMembers, languageField, wordpressIdField} from '../fields/shared'
 
 /**
  * An attorney profile. Gets its own page, and is pulled into pages and posts
@@ -50,7 +50,8 @@ export const attorneyType = defineType({
       name: 'bio',
       title: 'Full Bio',
       type: 'array',
-      of: [{type: 'block'}],
+      // Same members as a section body: a migrated bio brings its own images and links.
+      of: bodyMembers,
       description: 'Shown on the attorney’s own page',
     }),
     defineField({
@@ -67,6 +68,7 @@ export const attorneyType = defineType({
       type: 'seo',
       title: 'SEO & Social',
     }),
+    wordpressIdField,
   ],
   preview: {
     select: {
