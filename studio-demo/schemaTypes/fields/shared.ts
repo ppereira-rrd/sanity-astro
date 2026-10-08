@@ -88,3 +88,58 @@ export const bodyMembers = [
   defineArrayMember({type: 'video'}),
   defineArrayMember({type: 'button'}),
 ]
+
+/**
+ * Extra fields on the `translation.metadata` documents that link a document to its
+ * translations. Polylang links carry none of them; scripts/migrate-wordpress.ts sets
+ * `linkMethod: 'title-match'` on groups it paired by comparing translated titles, so an
+ * admin can open the metadata, see how the link was made, and tick `verified` once a
+ * person has confirmed the pair really is the same page.
+ */
+const autoMatchedOnly = ({document}: {document?: Record<string, unknown>}) =>
+  document?.linkMethod !== 'title-match'
+
+export const translationMetadataFields = [
+  defineField({
+    name: 'linkMethod',
+    type: 'string',
+    title: 'Linked by',
+    description:
+      'Polylang links were replayed from WordPress. "Title match" links were guessed by comparing translated titles — please verify them.',
+    options: {
+      list: [
+        {title: 'Polylang', value: 'polylang'},
+        {title: 'Title match (automatic)', value: 'title-match'},
+        {title: 'Manual', value: 'manual'},
+      ],
+    },
+    readOnly: true,
+  }),
+
+  defineField({
+    name: 'verified',
+    type: 'boolean',
+    title: 'Verified by a person',
+    description: 'Turn on once you have checked that these documents are really translations of each other.',
+    initialValue: false,
+    hidden: autoMatchedOnly,
+  }),
+
+  defineField({
+    name: 'matchScore',
+    type: 'number',
+    title: 'Match score',
+    description: 'Title similarity from 0 to 1 after translating the Spanish title into English.',
+    readOnly: true,
+    hidden: autoMatchedOnly,
+  }),
+
+  defineField({
+    name: 'matchDetails',
+    type: 'text',
+    title: 'What was compared',
+    rows: 4,
+    readOnly: true,
+    hidden: autoMatchedOnly,
+  }),
+]

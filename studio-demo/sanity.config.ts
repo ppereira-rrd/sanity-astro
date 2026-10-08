@@ -3,7 +3,7 @@ import {structureTool} from 'sanity/structure'
 import {visionTool} from '@sanity/vision'
 import {documentInternationalization} from '@sanity/document-internationalization'
 import {schemaTypes} from './schemaTypes'
-import {supportedLanguages, translatedTypes} from './schemaTypes/fields/shared'
+import {supportedLanguages, translatedTypes, translationMetadataFields} from './schemaTypes/fields/shared'
 
 export default defineConfig({
   name: 'default',
@@ -19,6 +19,7 @@ export default defineConfig({
       supportedLanguages: [...supportedLanguages],
       // Every document type that gets one document per language.
       schemaTypes: [...translatedTypes],
+      metadataFields: translationMetadataFields,
     }),
   ],
 

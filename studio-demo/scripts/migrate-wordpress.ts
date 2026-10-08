@@ -6,6 +6,8 @@
  *   npm run migrate:wordpress -- --site https://example.com      # a different client
  *   npm run migrate:wordpress -- --only post,page                # just these content types
  *   npm run migrate:wordpress -- --list                          # what this site exposes, then exit
+ *   npm run migrate:wordpress -- --match-translations            # then pair untranslated en/es documents by title
+ *   npm run migrate:wordpress -- --match-only --dry-run          # just the pairing, report only (needs ANTHROPIC_API_KEY)
  *
  * Clients do not all run the same content types: one has `videos`, another has `our_team` and
  * `case-result`, most have neither. Rather than hard-coding one site's shape, MIGRATIONS below
@@ -28,7 +30,7 @@ import {JSDOM} from 'jsdom'
 import {createSchema, type ArraySchemaType, type ObjectSchemaType} from 'sanity'
 import {getCliClient} from 'sanity/cli'
 import {schemaTypes} from '../schemaTypes'
-import {defaultLanguage, supportedLanguages} from '../schemaTypes/fields/shared'
+import {defaultLanguage, supportedLanguages, translatedTypes} from '../schemaTypes/fields/shared'
 
 const DEFAULT_SITE = 'https://www.joestephenslaw.com'
 const LANGUAGES = supportedLanguages.map((language) => language.id) as string[]
@@ -41,6 +43,9 @@ const flag = (name: string) => {
 
 const DRY_RUN = args.includes('--dry-run')
 const LIST_ONLY = args.includes('--list')
+const MATCH_TRANSLATIONS = args.includes('--match-translations') || args.includes('--match-only')
+const MATCH_ONLY = args.includes('--match-only')
+const MATCH_THRESHOLD = Number(flag('match-threshold')) || 0.8
 const LIMIT = Number(flag('limit')) || Infinity
 const SITE = (flag('site') ?? DEFAULT_SITE).replace(/\/+$/, '')
 const WP_API = `${SITE}/wp-json/wp/v2`
@@ -91,6 +96,7 @@ interface WpCategory {
   name: string
   slug: string
   description?: string
+  link?: string
   lang?: string
   translations?: Record<string, number>
 }
@@ -102,6 +108,8 @@ interface WpPost {
   link: string
   lang?: string
   categories?: number[]
+  /** One client's Spanish blog keeps its own taxonomy instead of `categories`. */
+  'articulos-category'?: number[]
   translations?: Record<string, number>
   title: {rendered: string}
   excerpt: {rendered: string}
@@ -146,6 +154,7 @@ interface WpCaseResult extends Omit<WpPost, 'categories'> {
 interface WpItem {
   id: number
   slug: string
+  link: string
   lang?: string
   translations?: Record<string, number>
 }
@@ -353,7 +362,36 @@ interface CleanResult {
   ctas: RawCta[]
   caseResults: RawCaseResult[]
   testimonials: RawTestimonial[]
+  /** Pretty-printed `application/ld+json` blocks found in the content, ready for `seo.jsonLd`. */
+  jsonLd: string[]
   dropped: string[]
+}
+
+/**
+ * Pages carry their own schema.org markup as `<script type="application/ld+json">`. Only
+ * blocks the studio would accept (valid JSON, every object with `@context` and `@type`) are
+ * kept; anything else is reported through `dropped` rather than failing validation in Sanity.
+ */
+function extractJsonLd(doc: Document, dropped: string[]): string[] {
+  const seen = new Set<string>()
+
+  for (const script of Array.from(doc.querySelectorAll('script[type="application/ld+json"]'))) {
+    const raw = (script.textContent ?? '').trim()
+    if (!raw) continue
+
+    try {
+      const parsed = JSON.parse(raw)
+      const items = Array.isArray(parsed) ? parsed : [parsed]
+      if (!items.every((item) => item && typeof item === 'object' && item['@context'] && item['@type'])) {
+        throw new Error('missing @context or @type')
+      }
+      seen.add(JSON.stringify(parsed, null, 2))
+    } catch (error) {
+      dropped.push(`JSON-LD (${(error as Error).message})`)
+    }
+  }
+
+  return [...seen]
 }
 
 function renameElement(el: Element, tagName: string) {
@@ -541,6 +579,9 @@ function cleanElementorHtml(html: string): CleanResult {
   const caseResults: RawCaseResult[] = []
   const testimonials: RawTestimonial[] = []
 
+  // Read the structured data before the scripts are stripped below.
+  const jsonLd = extractJsonLd(doc, dropped)
+
   doc.querySelectorAll('svg, script, style, noscript, form').forEach((el) => el.remove())
 
   // Key takeaways: a "KEY TAKEAWAYS" / "PUNTOS CLAVES" label followed by a list.
@@ -687,7 +728,7 @@ function cleanElementorHtml(html: string): CleanResult {
     a.setAttribute('href', toRelativeHref(a.getAttribute('href')!))
   })
 
-  return {html: doc.body.innerHTML, keyTakeaways, ctas, caseResults, testimonials, dropped}
+  return {html: doc.body.innerHTML, keyTakeaways, ctas, caseResults, testimonials, jsonLd, dropped}
 }
 
 // ---------------------------------------------------------------------------
@@ -846,7 +887,7 @@ const allBlocks = (sections: Array<Record<string, unknown>>): TypedObject[] =>
  * left to Portable Text, and collect the blocks that become `sections`.
  */
 async function convertContent(html: string, title: string) {
-  const {html: clean, keyTakeaways, ctas, caseResults, testimonials, dropped} =
+  const {html: clean, keyTakeaways, ctas, caseResults, testimonials, jsonLd, dropped} =
     cleanElementorHtml(html)
   const {lead, sections: headingSections} = splitAtHeadings(await htmlToBody(clean, title))
 
@@ -891,15 +932,37 @@ async function convertContent(html: string, title: string) {
     ...(await Promise.all(ctas.map((cta) => ctaSection(cta, title)))),
   ]
 
-  return {sections, keyTakeaways, ctas, caseResults, testimonials, lead, headingSections, dropped}
+  return {
+    sections,
+    keyTakeaways,
+    ctas,
+    caseResults,
+    testimonials,
+    jsonLd,
+    lead,
+    headingSections,
+    dropped,
+  }
 }
 
-const seoFields = (yoast: WpPost['yoast_head_json'] = {}) => ({
+const seoFields = (yoast: WpPost['yoast_head_json'] = {}, jsonLd: string[] = []) => ({
   _type: 'seo',
   ...(yoast.title ? {metaTitle: decode(yoast.title)} : {}),
   ...(yoast.description ? {metaDescription: yoast.description} : {}),
+  ...(jsonLd.length
+    ? {
+        jsonLd: jsonLd.map((json) => ({_key: key(), _type: 'jsonLdBlock', ...labelFor(json), json})),
+      }
+    : {}),
   noIndex: yoast.robots?.index === 'noindex',
 })
+
+/** The editor-only label: the block's `@type`, so the list reads "FAQPage", "LocalBusiness"… */
+function labelFor(json: string): {label?: string} {
+  const parsed = JSON.parse(json)
+  const types = (Array.isArray(parsed) ? parsed : [parsed]).flatMap((item) => item['@type'])
+  return types.length ? {label: types.join(', ')} : {}
+}
 
 /** Documents already imported, so a rerun updates them instead of duplicating. */
 async function existingIdsByWpId(type: string) {
@@ -988,6 +1051,7 @@ async function linkTranslations(
     const metadata = {
       _type: 'translation.metadata',
       schemaTypes: [schemaType],
+      linkMethod: 'polylang',
       translations: members.map((member) => ({
         _key: key(),
         _type: 'internationalizedArrayReferenceValue',
@@ -1014,14 +1078,33 @@ async function linkTranslations(
  *
  * Returns WordPress term ID → Sanity document ID so posts can reference their category.
  */
-async function migrateCategories(report: Array<Record<string, unknown>>) {
+async function migrateCategories(
+  report: Array<Record<string, unknown>>,
+  available: Set<string>,
+) {
   console.log(`${DRY_RUN ? '[dry run] ' : ''}Fetching WordPress categories…`)
-  const all = await fetchAllPaged<WpCategory>('categories')
-  const categories = all.filter((category) => LANGUAGES.includes(category.lang ?? ''))
-  const skipped = all.length - categories.length
-  console.log(
-    `Found ${categories.length} categories${skipped ? ` (${skipped} skipped: no language)` : ''}`,
-  )
+  // A Spanish-only blog post type has its own taxonomy, so no `lang` to read: the taxonomy
+  // says the language. Sites on Polylang report `lang`; sites without it fall back to the URL.
+  const taxonomies: ResourceAlias[] = [
+    'categories',
+    {resource: 'articulos-category', language: 'es'},
+  ].filter((alias) => available.has(aliasName(alias)))
+
+  const categories: Array<WpCategory & {lang: string}> = []
+  for (const alias of taxonomies) {
+    const terms = await fetchAllPaged<WpCategory>(aliasName(alias))
+    const hasPolylang = terms.some((term) => term.lang)
+    for (const term of terms) {
+      const path = term.link ? new URL(term.link).pathname : ''
+      const lang =
+        (typeof alias === 'string' ? undefined : alias.language) ??
+        term.lang ??
+        LANGUAGES.find((id) => id !== defaultLanguage && path.startsWith(`/${id}/`)) ??
+        (hasPolylang ? undefined : defaultLanguage)
+      if (lang && LANGUAGES.includes(lang)) categories.push({...term, lang})
+    }
+  }
+  console.log(`Found ${categories.length} categories`)
 
   const existing = DRY_RUN
     ? new Map<number, string>()
@@ -1154,6 +1237,7 @@ const contentReport = (converted: Awaited<ReturnType<typeof convertContent>>) =>
     ctas: converted.ctas.length,
     caseResults: converted.caseResults.length,
     testimonials: converted.testimonials.length,
+    jsonLd: converted.jsonLd.length,
     buttons: blocks.filter((block) => block._type === 'button').length,
     dropped: converted.dropped,
   }
@@ -1188,7 +1272,8 @@ let caseTypeTerms = new Map<number, string>()
 const MIGRATIONS: Array<Migration<never>> = [
   {
     name: 'posts',
-    resources: ['posts'],
+    // `articulos` is one client's Spanish blog: a separate post type, so no Polylang to say so.
+    resources: ['posts', {resource: 'articulos', language: 'es'}],
     type: 'post',
     translated: true,
     slug: (post: WpPost) => post.slug,
@@ -1198,7 +1283,7 @@ const MIGRATIONS: Array<Migration<never>> = [
 
       // Posts carry several terms; Sanity's `category` holds one. Polylang keeps terms
       // per-language, so the first one that resolved is already the right language.
-      const categoryId = (post.categories ?? [])
+      const categoryId = [...(post.categories ?? []), ...(post['articulos-category'] ?? [])]
         .map((wpId) => categoryIdByWpId.get(wpId))
         .find((id): id is string => Boolean(id))
 
@@ -1208,7 +1293,7 @@ const MIGRATIONS: Array<Migration<never>> = [
           language,
           basic: await basicFields(post, title, slug),
           ...(categoryId ? {category: {_type: 'reference', _ref: categoryId}} : {}),
-          seo: seoFields(post.yoast_head_json),
+          seo: seoFields(post.yoast_head_json, converted.jsonLd),
           ...(converted.sections.length ? {sections: converted.sections} : {}),
           wordpressId: post.id,
         },
@@ -1232,7 +1317,7 @@ const MIGRATIONS: Array<Migration<never>> = [
           _type: 'page',
           language,
           basic: await basicFields(page, title, slug),
-          seo: seoFields(page.yoast_head_json),
+          seo: seoFields(page.yoast_head_json, converted.jsonLd),
           ...(converted.sections.length ? {sections: converted.sections} : {}),
           wordpressId: page.id,
         },
@@ -1251,7 +1336,7 @@ const MIGRATIONS: Array<Migration<never>> = [
     async build(video: WpVideo, slug: string, language: string) {
       const title = decode(video.title.rendered)
       // Empty today, but convert it anyway so a transcript added in WordPress carries over.
-      const {html: clean, dropped} = cleanElementorHtml(video.content.rendered)
+      const {html: clean, jsonLd, dropped} = cleanElementorHtml(video.content.rendered)
       const transcript = await htmlToBody(clean, title)
 
       return {
@@ -1261,7 +1346,7 @@ const MIGRATIONS: Array<Migration<never>> = [
           basic: await basicFields(video, title, slug),
           videoUrl: video.yoast_head_json?.og_video,
           ...(transcript.length ? {transcript} : {}),
-          seo: seoFields(video.yoast_head_json),
+          seo: seoFields(video.yoast_head_json, jsonLd),
           wordpressId: video.id,
         },
         report: {
@@ -1282,7 +1367,7 @@ const MIGRATIONS: Array<Migration<never>> = [
     async build(member: WpTeamMember, slug: string, language: string) {
       const name = decode(member.title.rendered)
       const yoast = member.yoast_head_json ?? {}
-      const {html: clean, dropped} = cleanElementorHtml(member.content.rendered)
+      const {html: clean, jsonLd, dropped} = cleanElementorHtml(member.content.rendered)
       // `bio` holds prose; a profile has no headings worth turning into sections.
       const bio = await htmlToBody(clean, name)
 
@@ -1300,7 +1385,7 @@ const MIGRATIONS: Array<Migration<never>> = [
           ...(photoAssetId ? {photo: imageField(photoAssetId, media?.alt_text?.trim() || name)} : {}),
           ...(yoast.description ? {shortBio: truncate(yoast.description, 300)} : {}),
           ...(bio.length ? {bio} : {}),
-          seo: seoFields(yoast),
+          seo: seoFields(yoast, jsonLd),
           wordpressId: member.id,
         },
         report: {role: role || null, bio: bio.length, photo: Boolean(photoAssetId), dropped},
@@ -1379,8 +1464,17 @@ async function runMigration<T extends WpItem>(
 
   console.log(`${DRY_RUN ? '[dry run] ' : ''}Fetching WordPress ${migration.name} (${resource})…`)
   const all = await fetchAllPaged<T>(resource, EMBED, LIMIT)
+  // Sites without Polylang report no `lang` at all; their language is only in the URL (`/es/…`).
+  const languageOf = (item: WpItem) =>
+    pinned ??
+    item.lang ??
+    LANGUAGES.find((id) => id !== defaultLanguage && new URL(item.link).pathname.startsWith(`/${id}/`)) ??
+    defaultLanguage
+  const hasPolylang = all.some((item) => item.lang)
   const items = migration.translated
-    ? all.filter((item) => LANGUAGES.includes(item.lang ?? ''))
+    ? all.filter(
+        (item) => pinned || !hasPolylang || LANGUAGES.includes(item.lang ?? ''),
+      )
     : all
   const skipped = all.length - items.length
   console.log(
@@ -1395,7 +1489,7 @@ async function runMigration<T extends WpItem>(
 
   for (const [index, item] of items.entries()) {
     const slug = migration.slug(item)
-    const language = pinned ?? item.lang ?? defaultLanguage
+    const language = languageOf(item)
     console.log(`[${index + 1}/${items.length}] ${language} ${slug}`)
 
     const {doc, report: row} = await migration.build(item, slug, language)
@@ -1423,6 +1517,175 @@ async function runMigration<T extends WpItem>(
   }
 
   if (migration.translated) await linkTranslations(items, migration.type, idByWpId)
+}
+
+// ---------------------------------------------------------------------------
+// Translations Polylang does not know about
+// ---------------------------------------------------------------------------
+
+/**
+ * Some content types (and some individual pages) have a Spanish version that nothing links to
+ * the English one. For those, translate the Spanish titles into English, compare them with the
+ * English titles, and link the pairs that are nearly identical. The metadata documents are
+ * marked `linkMethod: 'title-match'` with the score, so an admin can see in the studio that
+ * an algorithm, not Polylang, made the link, and tick `verified` once a person has checked it.
+ *
+ * Only documents that are not in any translation group are considered, so Polylang's links
+ * are never touched and a rerun only looks at what is still unlinked.
+ */
+const MATCHABLE_TYPES = translatedTypes.filter((type) => type !== 'testimonial')
+const TITLE = 'coalesce(basic.title, title, name)'
+const TRANSLATION_MODEL = 'claude-haiku-5-5'
+
+interface UnlinkedDoc {
+  _id: string
+  language: string
+  title?: string
+}
+
+/** One batched call per 50 titles: Spanish in, English out, same order. */
+async function translateTitles(titles: string[]): Promise<string[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set; it is needed to translate titles')
+
+  const out: string[] = []
+  for (let start = 0; start < titles.length; start += 50) {
+    const chunk = titles.slice(start, start + 50)
+    const response = await withRetry('translate titles', async () => {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: TRANSLATION_MODEL,
+          max_tokens: 4096,
+          messages: [
+            {
+              role: 'user',
+              content:
+                'Translate each Spanish web page title into natural English. Keep proper nouns and ' +
+                'dollar amounts as they are. Reply with only a JSON array of strings, the same ' +
+                `length and order as the input.\n\n${JSON.stringify(chunk)}`,
+            },
+          ],
+        }),
+      })
+      if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${await res.text()}`)
+      return (await res.json()) as {content: Array<{type: string; text?: string}>}
+    })
+
+    const text = response.content.find((part) => part.type === 'text')?.text ?? ''
+    const parsed = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1))
+    if (!Array.isArray(parsed) || parsed.length !== chunk.length) {
+      throw new Error(`Expected ${chunk.length} translated titles, got ${parsed?.length}`)
+    }
+    out.push(...parsed.map(String))
+  }
+  return out
+}
+
+const STOP_WORDS = new Set(['a', 'an', 'the', 'of', 'for', 'to', 'in', 'on', 'and', 'or', 'your', 'you', 'is', 'are'])
+
+const titleTokens = (title: string) =>
+  new Set(
+    title
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word && !STOP_WORDS.has(word)),
+  )
+
+/** Sørensen–Dice on the word sets: 1 for the same words in any order, 0 for nothing shared. */
+function titleSimilarity(a: string, b: string): number {
+  const left = titleTokens(a)
+  const right = titleTokens(b)
+  if (!left.size || !right.size) return 0
+  let shared = 0
+  for (const word of left) if (right.has(word)) shared++
+  return (2 * shared) / (left.size + right.size)
+}
+
+async function matchUntranslated() {
+  const report: Array<Record<string, unknown>> = []
+
+  for (const type of MATCHABLE_TYPES) {
+    const docs = await client.fetch<UnlinkedDoc[]>(
+      `*[_type == $type && defined(language) && !(_id in path("drafts.**"))
+          && !(_id in *[_type == "translation.metadata"].translations[].value._ref)]
+        {_id, language, "title": ${TITLE}}`,
+      {type},
+    )
+    const english = docs.filter((doc) => doc.language === defaultLanguage && doc.title)
+    const spanish = docs.filter((doc) => doc.language === 'es' && doc.title)
+    if (!english.length || !spanish.length) continue
+
+    console.log(`Matching ${type}: ${spanish.length} Spanish against ${english.length} English`)
+    const translated = await translateTitles(spanish.map((doc) => doc.title!))
+
+    const candidates = spanish
+      .flatMap((es, index) =>
+        english.map((en) => ({
+          es,
+          en,
+          translated: translated[index],
+          score: titleSimilarity(translated[index], en.title!),
+        })),
+      )
+      .filter((pair) => pair.score >= 0.4)
+      .sort((a, b) => b.score - a.score)
+
+    // Best score first, one partner each: two Spanish pages never claim the same English one.
+    const used = new Set<string>()
+    for (const pair of candidates) {
+      if (used.has(pair.es._id) || used.has(pair.en._id)) continue
+      const linked = pair.score >= MATCH_THRESHOLD
+      report.push({
+        type,
+        linked,
+        score: Number(pair.score.toFixed(2)),
+        spanish: pair.es.title,
+        translated: pair.translated,
+        english: pair.en.title,
+      })
+      if (!linked) continue
+      used.add(pair.es._id)
+      used.add(pair.en._id)
+
+      if (DRY_RUN) continue
+      await withRetry(`link ${type} ${pair.en.title}`, () =>
+        client.create({
+          _type: 'translation.metadata',
+          schemaTypes: [type],
+          linkMethod: 'title-match',
+          verified: false,
+          matchScore: Number(pair.score.toFixed(2)),
+          matchDetails: `es: ${pair.es.title}\nes → en: ${pair.translated}\nen: ${pair.en.title}`,
+          translations: [
+            [defaultLanguage, pair.en._id],
+            ['es', pair.es._id],
+          ].map(([language, ref]) => ({
+            _key: key(),
+            _type: 'internationalizedArrayReferenceValue',
+            language,
+            value: {_type: 'reference', _ref: ref},
+          })),
+        }),
+      )
+    }
+
+    const unmatched = spanish.filter((doc) => !used.has(doc._id)).length
+    console.log(`  linked ${used.size / 2}, ${unmatched} Spanish left without a match`)
+  }
+
+  writePreview('_translation-matches.json', report)
+  console.log(
+    `Pairs at or above ${MATCH_THRESHOLD} are linked (${DRY_RUN ? 'dry run: not written' : 'written'}); ` +
+      `closer misses are listed in ${join(OUTPUT_DIR, '_translation-matches.json')}`,
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -1455,11 +1718,16 @@ async function main() {
   }
   if (LIST_ONLY) return
 
+  if (MATCH_ONLY) {
+    await matchUntranslated()
+    return
+  }
+
   const report: Array<Record<string, unknown>> = []
 
   // Categories first: posts reference them.
   if (available.has('categories') && planned.some((entry) => entry.migration.type === 'post')) {
-    categoryIdByWpId = await migrateCategories(report)
+    categoryIdByWpId = await migrateCategories(report, available)
   }
 
   for (const {migration, aliases} of planned) {
@@ -1469,6 +1737,7 @@ async function main() {
   }
 
   writePreview('_report.json', report)
+  if (MATCH_TRANSLATIONS) await matchUntranslated()
   console.log(`Done. Report: ${join(OUTPUT_DIR, '_report.json')}`)
 }
 
