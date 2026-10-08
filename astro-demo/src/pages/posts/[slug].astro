@@ -15,6 +15,9 @@ import CtaSection from "../../components/CtaSection.astro";
 import TestimonialSection from "../../components/TestimonialSection.astro";
 import CaseResultSection from "../../components/CaseResultSection.astro";
 import ButtonBlock from "../../components/ButtonBlock.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+
+import { tableOfContents } from "../../lib/headings";
 
 // `basic.author` is a reference, so it has to be dereferenced to read the name and bio.
 const POST_QUERY = `*[
@@ -55,6 +58,22 @@ const urlFor = (source: SanityImageSource) =>
 const postImageUrl = post.basic?.featuredImage
   ? urlFor(post.basic.featuredImage)?.width(900).height(500).url()
   : null;
+
+const sections: any[] = Array.isArray(post.sections) ? post.sections : [];
+const toc = tableOfContents(sections);
+const headingIds = new Map(toc.map((item) => [item.key, item.id]));
+
+// The contents list belongs directly above what it indexes, which puts it after the
+// key takeaways and the lede. Spliced in as a section so the dispatch below stays flat.
+const firstHeading = sections.findIndex((s) => s._type === "headingSection");
+const rendered =
+  toc.length > 1 && firstHeading >= 0
+    ? [
+        ...sections.slice(0, firstHeading),
+        { _type: "tableOfContents" },
+        ...sections.slice(firstHeading),
+      ]
+    : sections;
 ---
 
 <Main
@@ -104,34 +123,38 @@ const postImageUrl = post.basic?.featuredImage
       }
 
       {
-        Array.isArray(post.sections) &&
-          post.sections.map((section: any) => {
-            switch (section._type) {
-              case "keyTakeawaysSection":
-                return <KeyTakeawaysSection {...section} />;
+        rendered.map((section: any) => {
+          switch (section._type) {
+            case "keyTakeawaysSection":
+              return <KeyTakeawaysSection {...section} />;
 
-              case "headingSection":
-                return <HeadingSection {...section} />;
+            case "tableOfContents":
+              return <TableOfContents items={toc} />;
 
-              case "textSection":
-                return <TextSection {...section} />;
+            case "headingSection":
+              return (
+                <HeadingSection {...section} id={headingIds.get(section._key)} />
+              );
 
-              case "ctaSection":
-                return <CtaSection {...section} />;
+            case "textSection":
+              return <TextSection {...section} />;
 
-              case "testimonialSection":
-                return <TestimonialSection {...section} />;
+            case "ctaSection":
+              return <CtaSection {...section} />;
 
-              case "caseResultSection":
-                return <CaseResultSection {...section} />;
+            case "testimonialSection":
+              return <TestimonialSection {...section} />;
 
-              case "button":
-                return <ButtonBlock {...section} />;
+            case "caseResultSection":
+              return <CaseResultSection {...section} />;
 
-              default:
-                return null;
-            }
-          })
+            case "button":
+              return <ButtonBlock {...section} />;
+
+            default:
+              return null;
+          }
+        })
       }
 
       {

@@ -1,0 +1,52 @@
+---
+/**
+ * A table of contents built from a document's `headingSection`s. The ids come from
+ * lib/headings.ts, which HeadingSection renders onto the headings themselves, so
+ * every link here has a target. Carries vertical rhythm only and inherits its
+ * column width from whatever renders it.
+ */
+import type { TocItem } from "../lib/headings";
+
+interface Props {
+  items: TocItem[];
+  title?: string;
+  /** Deeper headings still get anchors, they just aren't listed — a full outline reads as noise. */
+  levels?: Array<TocItem["level"]>;
+}
+
+const { items, title = "On this page", levels = ["h2", "h3"] } = Astro.props;
+
+const shown = items.filter((item) => levels.includes(item.level));
+
+// Indent relative to the shallowest heading shown, so an article that starts at h3
+// doesn't render its whole contents list pushed over.
+const depth = (item: TocItem) => Number(item.level.slice(1));
+const shallowest = shown.length ? Math.min(...shown.map(depth)) : 0;
+const indents = ["", "pl-4", "pl-8", "pl-12", "pl-16"];
+---
+
+{
+  shown.length > 1 && (
+    <nav
+      aria-label={title}
+      class="my-10 rounded-xl border border-gray-200 bg-gray-50 p-6 md:p-8"
+    >
+      <h2 class="mb-4 text-sm font-semibold uppercase tracking-widest text-purple-700">
+        {title}
+      </h2>
+
+      <ol class="space-y-2">
+        {shown.map((item) => (
+          <li class={indents[depth(item) - shallowest] ?? ""}>
+            <a
+              href={`#${item.id}`}
+              class="text-gray-700 underline decoration-gray-300 underline-offset-4 hover:text-purple-700 hover:decoration-purple-400"
+            >
+              {item.text}
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  )
+}

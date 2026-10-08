@@ -14,6 +14,9 @@ import TestimonialSection from "../components/TestimonialSection.astro";
 import CaseResultSection from "../components/CaseResultSection.astro";
 import ButtonBlock from "../components/ButtonBlock.astro";
 import KeyTakeawaysSection from "../components/KeyTakeawaysSection.astro";
+import TableOfContents from "../components/TableOfContents.astro";
+
+import { tableOfContents } from "../lib/headings";
 
 const PAGE_QUERY = `*[
   _type == "page" &&
@@ -41,6 +44,21 @@ if (!page) {
   throw new Error("Page not found");
 }
 
+const sections: any[] = Array.isArray(page.sections) ? page.sections : [];
+const toc = tableOfContents(sections);
+const headingIds = new Map(toc.map((item) => [item.key, item.id]));
+
+// The contents list belongs directly above what it indexes, which puts it after the
+// hero and the lede. Spliced in as a section so the dispatch below stays flat.
+const firstHeading = sections.findIndex((s) => s._type === "headingSection");
+const rendered =
+  toc.length > 1 && firstHeading >= 0
+    ? [
+        ...sections.slice(0, firstHeading),
+        { _type: "tableOfContents" },
+        ...sections.slice(firstHeading),
+      ]
+    : sections;
 ---
 
 <Main
@@ -52,52 +70,58 @@ if (!page) {
 >
   <main class="min-h-screen py-16">
     {
-      Array.isArray(page.sections) &&
-        page.sections.map((section: any) => {
-          switch (section._type) {
-            case "heroSection":
-              return <HeroSection {...section} />;
+      rendered.map((section: any) => {
+        switch (section._type) {
+          case "heroSection":
+            return <HeroSection {...section} />;
 
-            // Prose sections read in a narrow column; the rest stay full width.
-            case "headingSection":
-              return (
-                <div class="max-w-3xl mx-auto px-6">
-                  <HeadingSection {...section} />
-                </div>
-              );
+          // Prose sections read in a narrow column; the rest stay full width.
+          case "tableOfContents":
+            return (
+              <div class="max-w-3xl mx-auto px-6">
+                <TableOfContents items={toc} />
+              </div>
+            );
 
-            case "textSection":
-              return (
-                <div class="max-w-3xl mx-auto px-6">
-                  <TextSection {...section} />
-                </div>
-              );
+          case "headingSection":
+            return (
+              <div class="max-w-3xl mx-auto px-6">
+                <HeadingSection {...section} id={headingIds.get(section._key)} />
+              </div>
+            );
 
-            case "ctaSection":
-              return <CtaSection {...section} />;
+          case "textSection":
+            return (
+              <div class="max-w-3xl mx-auto px-6">
+                <TextSection {...section} />
+              </div>
+            );
 
-            case "faqSection":
-              return <FaqSection {...section} />;
+          case "ctaSection":
+            return <CtaSection {...section} />;
 
-            case "featureGridSection":
-              return <FeatureGridSection {...section} />;
+          case "faqSection":
+            return <FaqSection {...section} />;
 
-            case "testimonialSection":
-              return <TestimonialSection {...section} />;
+          case "featureGridSection":
+            return <FeatureGridSection {...section} />;
 
-            case "caseResultSection":
-              return <CaseResultSection {...section} />;
+          case "testimonialSection":
+            return <TestimonialSection {...section} />;
 
-            case "button":
-              return <ButtonBlock {...section} />;
+          case "caseResultSection":
+            return <CaseResultSection {...section} />;
 
-            case "keyTakeawaysSection":
-              return <KeyTakeawaysSection {...section} />;
+          case "button":
+            return <ButtonBlock {...section} />;
 
-            default:
-              return null;
-          }
-        })
+          case "keyTakeawaysSection":
+            return <KeyTakeawaysSection {...section} />;
+
+          default:
+            return null;
+        }
+      })
     }
   </main>
 </Main>
