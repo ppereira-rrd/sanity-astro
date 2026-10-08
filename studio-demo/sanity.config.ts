@@ -13,6 +13,16 @@ export default defineConfig({
   projectId: 'igodg8qe',
   dataset: 'production',
 
+  /**
+   * Content Releases: group changes to posts and pages into a release and publish them
+   * together, or schedule the release. On by default in Studio 3.77+, stated here so it is a
+   * decision rather than an accident. There is no per-type switch: it applies to every
+   * document type that has drafts, which includes `post` and `page`.
+   */
+  releases: {
+    enabled: true,
+  },
+
   plugins: [
     structureTool({structure}),
     visionTool(),
