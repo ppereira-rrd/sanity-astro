@@ -8,6 +8,7 @@ import {testimonialSection} from './testimonialSection'
 import {caseResultSection} from './caseResultSection'
 import {attorneySection} from './attorneySection'
 import {keyTakeawaysSection} from './keyTakeawaysSection'
+import {tableOfContentsSection} from './tableOfContentsSection'
 
 export const sectionTypes = [
   heroSection,
@@ -20,6 +21,7 @@ export const sectionTypes = [
   caseResultSection,
   attorneySection,
   keyTakeawaysSection,
+  tableOfContentsSection,
 ]
 
 /**
