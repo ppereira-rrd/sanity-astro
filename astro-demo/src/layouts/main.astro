@@ -2,14 +2,21 @@
 import "../styles/global.css";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
+import { getSiteSettings, languageFromPath } from "../lib/siteSettings";
 
+// Pages that know their language pass it; the rest take it from the URL.
+const { lang = languageFromPath(Astro.url.pathname) } = Astro.props;
+const settings = await getSiteSettings(lang);
+
+// The settings' SEO fields are the defaults for any page that does not set its own.
 const {
-  title = "Astro + Sanity Demo",
-  description = "A simple demo project using Astro and Sanity.",
+  title = settings?.seo?.metaTitle || settings?.siteName || "Astro + Sanity Demo",
+  description = settings?.seo?.metaDescription ||
+    "A simple demo project using Astro and Sanity.",
 } = Astro.props;
 ---
 
-<html lang="en" class="scroll-smooth">
+<html lang={lang} class="scroll-smooth">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
@@ -20,11 +27,11 @@ const {
   </head>
 
   <body>
-    <Header />
+    <Header lang={lang} settings={settings} />
     <main>
       <slot />
     </main>
 
-    <Footer />
+    <Footer lang={lang} settings={settings} />
   </body>
 </html>

@@ -1,22 +1,106 @@
 ---
-// Footer
+// Footer, with contact details, social links and text from the studio's Site Settings.
 // Styled by Tailwind
+import type { SanityDocument } from "@sanity/client";
+
+interface Props {
+  lang: "en" | "es";
+  settings: SanityDocument | null;
+}
+
+const { lang, settings } = Astro.props;
+
+const siteName = settings?.siteName || "Astro + Sanity Demo";
+const home = lang === "es" ? "/es" : "/";
+const labels =
+  lang === "es"
+    ? { home: "Inicio", posts: "Artículos", attorneys: "Abogados" }
+    : { home: "Home", posts: "Posts", attorneys: "Attorneys" };
+const socialLinks: Array<{ _key: string; platform: string; url: string }> =
+  settings?.socialLinks ?? [];
 ---
 
 <footer class="border-t border-gray-200 mt-16">
-  <div
-    class="max-w-5xl mx-auto px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4"
-  >
-    <p class="text-sm text-gray-500">Astro + Sanity Demo</p>
+  <div class="max-w-5xl mx-auto px-6 py-8 grid gap-8 md:grid-cols-3 text-sm">
+    <div>
+      <p class="font-semibold text-gray-900">{siteName}</p>
 
-    <div class="flex items-center gap-5 text-sm">
-      <a href="/" class="text-gray-500 hover:text-purple-600 transition">
-        Home
-      </a>
+      {
+        settings?.footerText && (
+          <p class="mt-2 text-gray-500 whitespace-pre-line">
+            {settings.footerText}
+          </p>
+        )
+      }
+    </div>
 
-      <a href="/posts" class="text-gray-500 hover:text-purple-600 transition">
-        Posts
-      </a>
+    <div class="space-y-1 text-gray-500">
+      {
+        settings?.address && (
+          <p class="whitespace-pre-line">{settings.address}</p>
+        )
+      }
+      {
+        settings?.phone && (
+          <p>
+            <a
+              href={`tel:${settings.phone}`}
+              class="hover:text-purple-600 transition"
+            >
+              {settings.phone}
+            </a>
+          </p>
+        )
+      }
+      {
+        settings?.email && (
+          <p>
+            <a
+              href={`mailto:${settings.email}`}
+              class="hover:text-purple-600 transition"
+            >
+              {settings.email}
+            </a>
+          </p>
+        )
+      }
+    </div>
+
+    <div class="flex flex-col gap-2 md:items-end">
+      <div class="flex items-center gap-5">
+        <a href={home} class="text-gray-500 hover:text-purple-600 transition">
+          {labels.home}
+        </a>
+        <a
+          href="/posts"
+          class="text-gray-500 hover:text-purple-600 transition"
+        >
+          {labels.posts}
+        </a>
+        <a
+          href="/attorneys"
+          class="text-gray-500 hover:text-purple-600 transition"
+        >
+          {labels.attorneys}
+        </a>
+      </div>
+
+      {
+        socialLinks.length > 0 && (
+          <div class="flex items-center gap-4 text-gray-500">
+            {socialLinks.map((link) => (
+              <a
+                href={link.url}
+                rel="noopener noreferrer"
+                target="_blank"
+                class="hover:text-purple-600 transition"
+              >
+                {link.platform}
+              </a>
+            ))}
+          </div>
+        )
+      }
     </div>
   </div>
 </footer>

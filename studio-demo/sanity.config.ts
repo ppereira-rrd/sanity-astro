@@ -3,6 +3,7 @@ import {structureTool} from 'sanity/structure'
 import {visionTool} from '@sanity/vision'
 import {documentInternationalization} from '@sanity/document-internationalization'
 import {schemaTypes} from './schemaTypes'
+import {singletonTemplates, singletonTypes, structure} from './structure'
 import {supportedLanguages, translatedTypes, translationMetadataFields} from './schemaTypes/fields/shared'
 
 export default defineConfig({
@@ -13,7 +14,7 @@ export default defineConfig({
   dataset: 'production',
 
   plugins: [
-    structureTool(),
+    structureTool({structure}),
     visionTool(),
     documentInternationalization({
       supportedLanguages: [...supportedLanguages],
@@ -25,6 +26,7 @@ export default defineConfig({
 
   schema: {
     types: schemaTypes,
+    templates: (prev) => [...prev, ...singletonTemplates],
   },
 
   document: {
@@ -38,7 +40,11 @@ export default defineConfig({
      */
     newDocumentOptions: (prev) =>
       prev.filter(
-        (template) => !(translatedTypes as readonly string[]).includes(template.templateId),
+        (template) =>
+          !(translatedTypes as readonly string[]).includes(template.templateId) &&
+          // Singletons are opened from the desk structure, never created from the menu.
+          !(singletonTypes as readonly string[]).includes(template.templateId) &&
+          !singletonTemplates.some((single) => single.id === template.templateId),
       ),
   },
 })

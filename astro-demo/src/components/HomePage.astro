@@ -1,0 +1,43 @@
+---
+/**
+ * The home page for one language. The studio keeps a single `homePage` document per
+ * language under fixed IDs (`homePage-en`, `homePage-es`), so this reads that document
+ * directly rather than searching for it.
+ */
+import type { SanityDocument } from "@sanity/client";
+import { sanityClient } from "sanity:client";
+import Main from "../layouts/main.astro";
+import Sections from "./Sections.astro";
+
+interface Props {
+  language: "en" | "es";
+}
+
+const { language } = Astro.props;
+
+const home = await sanityClient.fetch<SanityDocument | null>(
+  `*[_id == $id][0]`,
+  { id: `homePage-${language}` },
+);
+---
+
+<Main
+  lang={language}
+  title={home?.seo?.metaTitle || home?.title || "Home"}
+  description={home?.seo?.metaDescription || ""}
+>
+  {
+    home ? (
+      <div class="py-16">
+        <Sections sections={home.sections} />
+      </div>
+    ) : (
+      <div class="min-h-screen flex items-center justify-center px-6 text-center">
+        <p class="text-gray-600">
+          The {language === "es" ? "Spanish " : ""}home page has not been
+          created in Sanity yet.
+        </p>
+      </div>
+    )
+  }
+</Main>

@@ -1,25 +1,67 @@
 ---
-// Header
+// Header, with the site name and logo from the studio's Site Settings.
 // Styled by Tailwind
+import type { SanityDocument } from "@sanity/client";
+import { sanityClient } from "sanity:client";
+import {
+  createImageUrlBuilder,
+  type SanityImageSource,
+} from "@sanity/image-url";
+
+interface Props {
+  lang: "en" | "es";
+  settings: SanityDocument | null;
+}
+
+const { lang, settings } = Astro.props;
+
+const { projectId, dataset } = sanityClient.config();
+const logo =
+  settings?.logo && projectId && dataset
+    ? createImageUrlBuilder({ projectId, dataset })
+        .image(settings.logo as SanityImageSource)
+        .height(80)
+        .url()
+    : null;
+
+const siteName = settings?.siteName || "Astro + Sanity";
+const home = lang === "es" ? "/es" : "/";
+const labels =
+  lang === "es"
+    ? { home: "Inicio", posts: "Artículos", attorneys: "Abogados" }
+    : { home: "Home", posts: "Posts", attorneys: "Attorneys" };
 ---
 
 <header class="border-b border-gray-200">
   <div class="max-w-5xl mx-auto px-6 py-5">
     <div class="flex items-center justify-between">
       <a
-        href="/"
+        href={home}
         class="text-xl font-bold tracking-tight hover:text-purple-600 transition"
       >
-        Astro + Sanity
+        {
+          logo ? (
+            <img src={logo} alt={siteName} class="h-10 w-auto" />
+          ) : (
+            siteName
+          )
+        }
       </a>
 
       <nav class="flex items-center gap-6">
-        <a href="/" class="text-gray-600 hover:text-purple-600 transition">
-          Home
+        <a href={home} class="text-gray-600 hover:text-purple-600 transition">
+          {labels.home}
         </a>
 
         <a href="/posts" class="text-gray-600 hover:text-purple-600 transition">
-          Posts
+          {labels.posts}
+        </a>
+
+        <a
+          href="/attorneys"
+          class="text-gray-600 hover:text-purple-600 transition"
+        >
+          {labels.attorneys}
         </a>
       </nav>
     </div>

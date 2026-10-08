@@ -6,8 +6,13 @@
  *   npm run migrate:wordpress -- --site https://example.com      # a different client
  *   npm run migrate:wordpress -- --only post,page                # just these content types
  *   npm run migrate:wordpress -- --list                          # what this site exposes, then exit
- *   npm run migrate:wordpress -- --match-translations            # then pair untranslated en/es documents by title
+ *   npm run migrate:wordpress -- --match-translations            # pair untranslated en/es documents by title, even on a Polylang site
+ *   npm run migrate:wordpress -- --no-match                      # never pair by title
  *   npm run migrate:wordpress -- --match-only --dry-run          # just the pairing, report only (needs ANTHROPIC_API_KEY)
+ *
+ * Title pairing (which calls the Anthropic API) runs by default only on a site without Polylang,
+ * where nothing else links the languages. On a Polylang site it needs --match-translations, and
+ * it still only considers documents Polylang left unlinked.
  *
  * Clients do not all run the same content types: one has `videos`, another has `our_team` and
  * `case-result`, most have neither. Rather than hard-coding one site's shape, MIGRATIONS below
@@ -43,8 +48,13 @@ const flag = (name: string) => {
 
 const DRY_RUN = args.includes('--dry-run')
 const LIST_ONLY = args.includes('--list')
-const MATCH_TRANSLATIONS = args.includes('--match-translations') || args.includes('--match-only')
 const MATCH_ONLY = args.includes('--match-only')
+const MATCH_FORCED = args.includes('--match-translations') || MATCH_ONLY
+const NO_MATCH = args.includes('--no-match')
+/** Set once any fetched record carries Polylang's `lang`; decides whether pairing runs by default. */
+let polylangSeen = false
+/** `--ids 2608,8937` restricts a run to those WordPress IDs, e.g. to redo just the home pages. */
+const IDS = new Set((flag('ids') ?? '').split(',').map(Number).filter(Boolean))
 const MATCH_THRESHOLD = Number(flag('match-threshold')) || 0.8
 const LIMIT = Number(flag('limit')) || Infinity
 const SITE = (flag('site') ?? DEFAULT_SITE).replace(/\/+$/, '')
@@ -1103,6 +1113,7 @@ async function migrateCategories(
   for (const alias of taxonomies) {
     const terms = await fetchAllPaged<WpCategory>(aliasName(alias))
     const hasPolylang = terms.some((term) => term.lang)
+    if (hasPolylang) polylangSeen = true
     for (const term of terms) {
       const path = term.link ? new URL(term.link).pathname : ''
       const lang =
@@ -1253,6 +1264,16 @@ const contentReport = (converted: Awaited<ReturnType<typeof convertContent>>) =>
 }
 
 /**
+ * The page WordPress serves at `/` (and `/es/`) is the home page. It becomes the studio's
+ * `homePage` singleton for its language rather than an ordinary page, because the Astro site
+ * renders `/` and `/es` from that document.
+ */
+function isHomePage(page: WpPage): boolean {
+  const path = new URL(page.link).pathname.replace(/^\/+|\/+$/g, '')
+  return path === '' || LANGUAGES.includes(path)
+}
+
+/**
  * WordPress nests pages, and leaf slugs repeat across branches (`car-accident` lives under
  * several parents), so the slug is the full path with Polylang's language prefix removed.
  */
@@ -1320,6 +1341,22 @@ const MIGRATIONS: Array<Migration<never>> = [
     async build(page: WpPage, slug: string, language: string) {
       const title = decode(page.title.rendered)
       const converted = await convertContent(page.content.rendered, title)
+
+      if (isHomePage(page)) {
+        return {
+          doc: {
+            // One fixed document per language: the studio and the Astro site both look it up by ID.
+            _id: `homePage-${language}`,
+            _type: 'homePage',
+            language,
+            title,
+            seo: seoFields(page.yoast_head_json, converted.jsonLd),
+            ...(converted.sections.length ? {sections: converted.sections} : {}),
+            wordpressId: page.id,
+          },
+          report: {home: true, ...contentReport(converted)},
+        }
+      }
 
       return {
         doc: {
@@ -1479,12 +1516,12 @@ async function runMigration<T extends WpItem>(
     LANGUAGES.find((id) => id !== defaultLanguage && new URL(item.link).pathname.startsWith(`/${id}/`)) ??
     defaultLanguage
   const hasPolylang = all.some((item) => item.lang)
-  const items = migration.translated
-    ? all.filter(
-        (item) => pinned || !hasPolylang || LANGUAGES.includes(item.lang ?? ''),
-      )
+  if (hasPolylang) polylangSeen = true
+  const withLanguage = migration.translated
+    ? all.filter((item) => pinned || !hasPolylang || LANGUAGES.includes(item.lang ?? ''))
     : all
-  const skipped = all.length - items.length
+  const items = withLanguage.filter((item) => !IDS.size || IDS.has(item.id))
+  const skipped = all.length - withLanguage.length
   console.log(
     `Found ${items.length} ${migration.name}${skipped ? ` (${skipped} skipped: no language)` : ''}`,
   )
@@ -1494,6 +1531,16 @@ async function runMigration<T extends WpItem>(
 
   const existing = await existingIdsByWpId(migration.type)
   const idByWpId = new Map<number, string>()
+  const notes = DRY_RUN || !NOTE_TYPES.includes(migration.type)
+    ? new Map<string, string>()
+    : new Map(
+        (
+          await client.fetch<Array<{_id: string; translationNote: string}>>(
+            `*[_type == $type && defined(translationNote)]{_id, translationNote}`,
+            {type: migration.type},
+          )
+        ).map((doc) => [doc._id, doc.translationNote]),
+      )
 
   for (const [index, item] of items.entries()) {
     const slug = migration.slug(item)
@@ -1512,16 +1559,26 @@ async function runMigration<T extends WpItem>(
     })
 
     if (DRY_RUN) {
-      writePreview(`${migration.type}-${doc.language}-${slug.replace(/\//g, '--')}.json`, doc)
+      writePreview(`${doc._type}-${doc.language}-${slug.replace(/\//g, '--')}.json`, doc)
       continue
     }
 
+    // A document that is a different type than the migration's (the home page) has a fixed ID,
+    // is not part of a Polylang group, and replaces the ordinary document an earlier run made.
+    const reclassified = doc._type !== migration.type
+    const stale = existing.get(item.id)
+    if (reclassified && stale) {
+      await withRetry(`remove ${migration.type} ${slug}`, () => client.delete(stale))
+    }
+
     // Pick the ID before saving so a retry after a dropped response overwrites instead of duplicating.
-    const id = existing.get(item.id) ?? randomUUID()
-    await withRetry(`save ${migration.type} ${slug}`, () =>
-      client.createOrReplace({...doc, _id: id}),
+    const id = typeof doc._id === 'string' ? doc._id : (stale ?? randomUUID())
+    // A reimport replaces the document, so keep the admin note the matching step wrote on it.
+    const note = reclassified ? undefined : notes.get(id)
+    await withRetry(`save ${doc._type} ${slug}`, () =>
+      client.createOrReplace({...doc, ...(note ? {translationNote: note} : {}), _id: id}),
     )
-    idByWpId.set(item.id, id)
+    if (!reclassified) idByWpId.set(item.id, id)
   }
 
   if (migration.translated) await linkTranslations(items, migration.type, idByWpId)
@@ -1654,12 +1711,12 @@ function titleSimilarity(a: string, b: string): number {
   return (2 * shared) / (left.size + right.size)
 }
 
-async function matchUntranslated() {
+async function matchUntranslated(types: readonly string[] = MATCHABLE_TYPES) {
   const report: Array<Record<string, unknown>> = []
   /** What each page's admin-only `translationNote` will say, written once the pairs are settled. */
   const notes: Array<{type: string; _id: string; title?: string; note: string}> = []
 
-  for (const type of MATCHABLE_TYPES) {
+  for (const type of MATCHABLE_TYPES.filter((candidate) => types.includes(candidate))) {
     const docs = await client.fetch<UnlinkedDoc[]>(
       `*[_type == $type && defined(language) && !(_id in path("drafts.**"))
           && !(_id in *[_type == "translation.metadata"].translations[].value._ref)]
@@ -1822,7 +1879,24 @@ async function main() {
   }
 
   writePreview('_report.json', report)
-  if (MATCH_TRANSLATIONS) await matchUntranslated()
+
+  // Pairing by title is a fallback for sites where nothing else links the languages, so a
+  // Polylang site has to ask for it. A dry run never writes, so it never pairs on its own.
+  const migrated = [...planned.map((entry) => entry.migration.type), 'category']
+  if (NO_MATCH) {
+    console.log('Title pairing skipped (--no-match)')
+  } else if (MATCH_FORCED) {
+    await matchUntranslated(migrated)
+  } else if (polylangSeen) {
+    console.log('Polylang links translations on this site; pass --match-translations to also pair leftovers by title')
+  } else if (DRY_RUN) {
+    console.log('No Polylang on this site: a real run would pair Spanish and English documents by title')
+  } else if (!process.env.ANTHROPIC_API_KEY) {
+    console.log('No Polylang on this site, but ANTHROPIC_API_KEY is not set, so title pairing was skipped')
+  } else {
+    console.log('No Polylang on this site: pairing Spanish and English documents by title')
+    await matchUntranslated(migrated)
+  }
   console.log(`Done. Report: ${join(OUTPUT_DIR, '_report.json')}`)
 }
 

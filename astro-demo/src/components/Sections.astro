@@ -1,0 +1,76 @@
+---
+/**
+ * Renders a document's `sections` array: one component per section type, with prose
+ * sections held to a narrow column. Used by the home page; pages, posts and attorneys
+ * carry their own copy of this dispatch.
+ */
+import HeroSection from "./HeroSection.astro";
+import HeadingSection from "./HeadingSection.astro";
+import TextSection from "./TextSection.astro";
+import CtaSection from "./CtaSection.astro";
+import FaqSection from "./FaqSection.astro";
+import FeatureGridSection from "./FeatureGridSection.astro";
+import TestimonialSection from "./TestimonialSection.astro";
+import CaseResultSection from "./CaseResultSection.astro";
+import ButtonBlock from "./ButtonBlock.astro";
+import KeyTakeawaysSection from "./KeyTakeawaysSection.astro";
+import { tableOfContents } from "../lib/headings";
+
+interface Props {
+  sections?: any[];
+}
+
+const sections: any[] = Array.isArray(Astro.props.sections)
+  ? Astro.props.sections
+  : [];
+const headingIds = new Map(
+  tableOfContents(sections).map((item) => [item.key, item.id]),
+);
+---
+
+{
+  sections.map((section) => {
+    switch (section._type) {
+      case "heroSection":
+        return <HeroSection {...section} />;
+
+      case "headingSection":
+        return (
+          <div class="max-w-3xl mx-auto px-6">
+            <HeadingSection {...section} id={headingIds.get(section._key)} />
+          </div>
+        );
+
+      case "textSection":
+        return (
+          <div class="max-w-3xl mx-auto px-6">
+            <TextSection {...section} />
+          </div>
+        );
+
+      case "ctaSection":
+        return <CtaSection {...section} />;
+
+      case "faqSection":
+        return <FaqSection {...section} />;
+
+      case "featureGridSection":
+        return <FeatureGridSection {...section} />;
+
+      case "testimonialSection":
+        return <TestimonialSection {...section} />;
+
+      case "caseResultSection":
+        return <CaseResultSection {...section} />;
+
+      case "button":
+        return <ButtonBlock {...section} />;
+
+      case "keyTakeawaysSection":
+        return <KeyTakeawaysSection {...section} />;
+
+      default:
+        return null;
+    }
+  })
+}

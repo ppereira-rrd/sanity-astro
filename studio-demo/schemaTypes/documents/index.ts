@@ -6,6 +6,9 @@ import {caseResultType} from './caseResult'
 import {attorneyType} from './attorney'
 import {testimonialType} from './testimonial'
 import {authorType} from './author'
+import {redirectType} from './redirect'
+import {homePageType} from './homePage'
+import {siteSettingsType} from './siteSettings'
 
 export const documentTypes = [
   postType,
@@ -16,4 +19,7 @@ export const documentTypes = [
   attorneyType,
   testimonialType,
   authorType,
+  homePageType,
+  siteSettingsType,
+  redirectType,
 ]
