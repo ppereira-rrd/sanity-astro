@@ -1,6 +1,7 @@
 import {defineField, defineType} from 'sanity'
 import {UsersIcon} from '@sanity/icons/Users'
-import {bodyMembers, languageField, wordpressIdField} from '../fields/shared'
+import {languageField, wordpressIdField} from '../fields/shared'
+import {sectionMembers} from '../sections'
 
 /**
  * An attorney profile. Gets its own page, and is pulled into pages and posts
@@ -47,12 +48,12 @@ export const attorneyType = defineType({
       description: 'One or two sentences, shown in the team grid',
     }),
     defineField({
-      name: 'bio',
-      title: 'Full Bio',
+      name: 'sections',
+      title: 'Profile Sections',
       type: 'array',
-      // Same members as a section body: a migrated bio brings its own images and links.
-      of: bodyMembers,
-      description: 'Shown on the attorney’s own page',
+      // The same sections as pages and posts, so a bio can have headings, text blocks and more.
+      of: sectionMembers,
+      description: 'The attorney’s own page, section by section',
     }),
     defineField({
       name: 'email',

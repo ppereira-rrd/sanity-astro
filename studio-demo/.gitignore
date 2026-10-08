@@ -30,3 +30,4 @@
 
 # Migration previews and reports
 /scripts/.migration-output
+/private/

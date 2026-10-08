@@ -23,7 +23,7 @@
  * source URL, and translation links on the documents they reference.
  */
 import {randomUUID} from 'node:crypto'
-import {mkdirSync, writeFileSync} from 'node:fs'
+import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs'
 import {join} from 'node:path'
 import {htmlToBlocks, type TypedObject} from '@portabletext/block-tools'
 import {JSDOM} from 'jsdom'
@@ -1367,9 +1367,8 @@ const MIGRATIONS: Array<Migration<never>> = [
     async build(member: WpTeamMember, slug: string, language: string) {
       const name = decode(member.title.rendered)
       const yoast = member.yoast_head_json ?? {}
-      const {html: clean, jsonLd, dropped} = cleanElementorHtml(member.content.rendered)
-      // `bio` holds prose; a profile has no headings worth turning into sections.
-      const bio = await htmlToBody(clean, name)
+      // Same pipeline as pages and posts: headings become heading sections, prose text sections.
+      const converted = await convertContent(member.content.rendered, name)
 
       const media = member._embedded?.['wp:featuredmedia']?.[0]
       const photoAssetId = media?.source_url ? await uploadImage(media.source_url) : null
@@ -1384,11 +1383,11 @@ const MIGRATIONS: Array<Migration<never>> = [
           ...(role && role !== name ? {role} : {}),
           ...(photoAssetId ? {photo: imageField(photoAssetId, media?.alt_text?.trim() || name)} : {}),
           ...(yoast.description ? {shortBio: truncate(yoast.description, 300)} : {}),
-          ...(bio.length ? {bio} : {}),
-          seo: seoFields(yoast, jsonLd),
+          ...(converted.sections.length ? {sections: converted.sections} : {}),
+          seo: seoFields(yoast, converted.jsonLd),
           wordpressId: member.id,
         },
-        report: {role: role || null, bio: bio.length, photo: Boolean(photoAssetId), dropped},
+        report: {role: role || null, photo: Boolean(photoAssetId), ...contentReport(converted)},
       }
     },
   } as unknown as Migration<never>,
@@ -1537,6 +1536,24 @@ const MATCHABLE_TYPES = translatedTypes.filter((type) => type !== 'testimonial')
 const TITLE = 'coalesce(basic.title, title, name)'
 const TRANSLATION_MODEL = 'claude-haiku-5-5'
 
+/**
+ * Category pairs already linked on another client's site (scripts/build-category-glossary.mjs).
+ * A Spanish category found here is translated from the glossary, and the pairs also go to the
+ * model as examples so its wording for the rest leans the same way.
+ */
+const GLOSSARY: Array<{en: string; es: string}> = (() => {
+  const file = join(process.cwd(), 'scripts', 'data', 'category-translations.json')
+  return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : []
+})()
+
+const glossaryKey = (title: string) =>
+  title
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+const glossaryEnglish = new Map(GLOSSARY.map((entry) => [glossaryKey(entry.es), entry.en]))
+
 interface UnlinkedDoc {
   _id: string
   language: string
@@ -1544,7 +1561,7 @@ interface UnlinkedDoc {
 }
 
 /** One batched call per 50 titles: Spanish in, English out, same order. */
-async function translateTitles(titles: string[]): Promise<string[]> {
+async function translateTitles(titles: string[], examples: typeof GLOSSARY = []): Promise<string[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set; it is needed to translate titles')
 
@@ -1567,7 +1584,11 @@ async function translateTitles(titles: string[]): Promise<string[]> {
               role: 'user',
               content:
                 'Translate each Spanish web page title into natural English. Keep proper nouns and ' +
-                'dollar amounts as they are. Reply with only a JSON array of strings, the same ' +
+                'dollar amounts as they are. ' +
+                (examples.length
+                  ? `Established translations to stay consistent with: ${JSON.stringify(examples.map(({en, es}) => ({es, en})))}. `
+                  : '') +
+                'Reply with only a JSON array of strings, the same ' +
                 `length and order as the input.\n\n${JSON.stringify(chunk)}`,
             },
           ],
@@ -1589,6 +1610,12 @@ async function translateTitles(titles: string[]): Promise<string[]> {
 
 const STOP_WORDS = new Set(['a', 'an', 'the', 'of', 'for', 'to', 'in', 'on', 'and', 'or', 'your', 'you', 'is', 'are'])
 
+/** "Accidents" and "Accident" are the same word to a reader, so they should be to the score. */
+const stem = (word: string) =>
+  word.length < 4 || /(ss|us)$/.test(word)
+    ? word
+    : word.replace(/ies$/, 'y').replace(/(s|x|ch|sh)es$/, '$1').replace(/([^s])s$/, '$1')
+
 const titleTokens = (title: string) =>
   new Set(
     title
@@ -1596,7 +1623,8 @@ const titleTokens = (title: string) =>
       .replace(/[̀-ͯ]/g, '')
       .toLowerCase()
       .split(/[^a-z0-9]+/)
-      .filter((word) => word && !STOP_WORDS.has(word)),
+      .filter((word) => word && !STOP_WORDS.has(word))
+      .map(stem),
   )
 
 /** Sørensen–Dice on the word sets: 1 for the same words in any order, 0 for nothing shared. */
@@ -1624,7 +1652,16 @@ async function matchUntranslated() {
     if (!english.length || !spanish.length) continue
 
     console.log(`Matching ${type}: ${spanish.length} Spanish against ${english.length} English`)
-    const translated = await translateTitles(spanish.map((doc) => doc.title!))
+    const fromGlossary = type === 'category' ? spanish.map((doc) => glossaryEnglish.get(glossaryKey(doc.title!))) : []
+    const pending = spanish.filter((_, index) => !fromGlossary[index])
+    const modelOutput = pending.length
+      ? await translateTitles(
+          pending.map((doc) => doc.title!),
+          type === 'category' ? GLOSSARY : [],
+        )
+      : []
+    let next = 0
+    const translated = spanish.map((_, index) => fromGlossary[index] ?? modelOutput[next++])
 
     const candidates = spanish
       .flatMap((es, index) =>
