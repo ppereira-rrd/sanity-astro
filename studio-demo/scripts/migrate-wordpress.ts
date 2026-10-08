@@ -1028,6 +1028,19 @@ async function authorRef(author: WpAuthor | undefined) {
 // ---------------------------------------------------------------------------
 
 /**
+ * One entry of a `translation.metadata` document, in the shape the plugin itself writes: the
+ * language on the item, and a weak reference that becomes strong when the document is
+ * published. A strong reference would stop either document being deleted without first
+ * unlinking it.
+ */
+const translationEntry = (language: string, ref: string, type: string) => ({
+  _key: key(),
+  _type: 'internationalizedArrayReferenceValue',
+  language,
+  value: {_type: 'reference', _ref: ref, _weak: true, _strengthenOnPublish: {type}},
+})
+
+/**
  * Replays Polylang's `translations` map (language → WordPress ID) as the
  * `translation.metadata` documents the document-internationalization plugin reads.
  * Matched on the documents they reference, so reruns update instead of duplicating.
@@ -1062,12 +1075,7 @@ async function linkTranslations(
       _type: 'translation.metadata',
       schemaTypes: [schemaType],
       linkMethod: 'polylang',
-      translations: members.map((member) => ({
-        _key: key(),
-        _type: 'internationalizedArrayReferenceValue',
-        language: member.language,
-        value: {_type: 'reference', _ref: member.id},
-      })),
+      translations: members.map((member) => translationEntry(member.language, member.id, schemaType)),
     }
     const id = metadataId ?? randomUUID()
     await withRetry(`link ${schemaType} translations`, () =>
@@ -1780,12 +1788,7 @@ async function matchUntranslated(types: readonly string[] = MATCHABLE_TYPES) {
           translations: [
             [defaultLanguage, pair.en._id],
             ['es', pair.es._id],
-          ].map(([language, ref]) => ({
-            _key: key(),
-            _type: 'internationalizedArrayReferenceValue',
-            language,
-            value: {_type: 'reference', _ref: ref},
-          })),
+          ].map(([language, ref]) => translationEntry(language, ref, type)),
         }),
       )
     }
