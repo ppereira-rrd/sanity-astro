@@ -1,0 +1,69 @@
+---
+import type { SanityDocument } from "@sanity/client";
+import { sanityClient } from "sanity:client";
+import Main from "../../layouts/main.astro";
+import {
+  createImageUrlBuilder,
+  type SanityImageSource,
+} from "@sanity/image-url";
+
+const ATTORNEYS_QUERY = `*[
+  _type == "attorney"
+  && defined(slug.current)
+  && (language == "en" || !defined(language))
+]|order(name asc){
+  _id,
+  name,
+  "slug": slug.current,
+  role,
+  photo
+}`;
+
+const attorneys = await sanityClient.fetch<SanityDocument[]>(ATTORNEYS_QUERY);
+
+const { projectId, dataset } = sanityClient.config();
+const urlFor = (source: SanityImageSource) =>
+  projectId && dataset
+    ? createImageUrlBuilder({ projectId, dataset }).image(source)
+    : null;
+---
+
+<Main title="Attorneys" description="Meet our attorneys.">
+  <main class="min-h-screen px-6 py-16">
+    <div class="max-w-5xl mx-auto">
+      <h1 class="text-4xl font-bold tracking-tight mb-10">Attorneys</h1>
+
+      {
+        attorneys.length > 0 ? (
+          <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {attorneys.map((attorney) => (
+              <a
+                href={`/attorneys/${attorney.slug}`}
+                class="block p-5 rounded-xl border border-gray-200 hover:bg-gray-50 hover:shadow-md transition"
+              >
+                {attorney.photo && (
+                  <img
+                    src={urlFor(attorney.photo)
+                      ?.width(480)
+                      .height(480)
+                      .fit("crop")
+                      .url()}
+                    alt={attorney.photo.alt || attorney.name}
+                    class="w-full aspect-square rounded-lg object-cover mb-4"
+                    loading="lazy"
+                  />
+                )}
+                <h2 class="text-lg font-semibold">{attorney.name}</h2>
+                {attorney.role && (
+                  <p class="text-sm text-gray-600">{attorney.role}</p>
+                )}
+              </a>
+            ))}
+          </div>
+        ) : (
+          <p class="text-gray-600">No attorneys yet.</p>
+        )
+      }
+    </div>
+  </main>
+</Main>

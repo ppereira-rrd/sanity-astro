@@ -1,0 +1,176 @@
+---
+import Main from "../../layouts/main.astro";
+
+import type { SanityDocument } from "@sanity/client";
+import { sanityClient } from "sanity:client";
+import {
+  createImageUrlBuilder,
+  type SanityImageSource,
+} from "@sanity/image-url";
+
+import HeroSection from "../../components/HeroSection.astro";
+import HeadingSection from "../../components/HeadingSection.astro";
+import TextSection from "../../components/TextSection.astro";
+import CtaSection from "../../components/CtaSection.astro";
+import FaqSection from "../../components/FaqSection.astro";
+import FeatureGridSection from "../../components/FeatureGridSection.astro";
+import TestimonialSection from "../../components/TestimonialSection.astro";
+import CaseResultSection from "../../components/CaseResultSection.astro";
+import ButtonBlock from "../../components/ButtonBlock.astro";
+import KeyTakeawaysSection from "../../components/KeyTakeawaysSection.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+
+import { tableOfContents } from "../../lib/headings";
+
+export async function getStaticPaths(): Promise<
+  { params: { slug: string } }[]
+> {
+  return await sanityClient.fetch(`*[
+    _type == "attorney" &&
+    defined(slug.current)
+  ]{
+    "params": { "slug": slug.current }
+  }`);
+}
+
+const attorney = await sanityClient.fetch<SanityDocument>(
+  `*[_type == "attorney" && slug.current == $slug][0]`,
+  Astro.params,
+);
+
+if (!attorney) {
+  throw new Error("Attorney not found");
+}
+
+const { projectId, dataset } = sanityClient.config();
+const urlFor = (source: SanityImageSource) =>
+  projectId && dataset
+    ? createImageUrlBuilder({ projectId, dataset }).image(source)
+    : null;
+
+const sections: any[] = Array.isArray(attorney.sections)
+  ? attorney.sections
+  : [];
+const toc = tableOfContents(sections);
+const headingIds = new Map(toc.map((item) => [item.key, item.id]));
+
+// Same placement as pages: directly above the first heading it indexes.
+const firstHeading = sections.findIndex((s) => s._type === "headingSection");
+const rendered =
+  toc.length > 1 && firstHeading >= 0
+    ? [
+        ...sections.slice(0, firstHeading),
+        { _type: "tableOfContentsSection" },
+        ...sections.slice(firstHeading),
+      ]
+    : sections;
+---
+
+<Main
+  title={attorney.seo?.metaTitle || attorney.name}
+  description={attorney.seo?.metaDescription || attorney.shortBio || ""}
+>
+  <main class="min-h-screen py-16">
+    <header class="max-w-3xl mx-auto px-6 mb-12 flex items-center gap-8">
+      {
+        attorney.photo && (
+          <img
+            src={urlFor(attorney.photo)?.width(480).height(480).fit("crop").url()}
+            alt={attorney.photo.alt || attorney.name}
+            class="w-40 h-40 shrink-0 rounded-xl object-cover"
+            width="160"
+            height="160"
+          />
+        )
+      }
+
+      <div class="min-w-0">
+        <h1 class="text-4xl font-bold tracking-tight">{attorney.name}</h1>
+
+        {attorney.role && <p class="mt-2 text-lg text-gray-600">{attorney.role}</p>}
+
+        {
+          attorney.shortBio && (
+            <p class="mt-4 text-gray-600">{attorney.shortBio}</p>
+          )
+        }
+
+        {
+          (attorney.email || attorney.phone) && (
+            <p class="mt-4 text-sm">
+              {attorney.email && (
+                <a class="text-purple-600 underline" href={`mailto:${attorney.email}`}>
+                  {attorney.email}
+                </a>
+              )}
+              {attorney.email && attorney.phone && " · "}
+              {attorney.phone && (
+                <a class="text-purple-600 underline" href={`tel:${attorney.phone}`}>
+                  {attorney.phone}
+                </a>
+              )}
+            </p>
+          )
+        }
+      </div>
+    </header>
+
+    {
+      rendered.map((section: any) => {
+        switch (section._type) {
+          case "heroSection":
+            return <HeroSection {...section} />;
+
+          case "tableOfContentsSection":
+            return (
+              <div class="max-w-3xl mx-auto px-6">
+                <TableOfContents
+                  items={toc}
+                  title={section.heading}
+                  levels={section.headingLevels}
+                />
+              </div>
+            );
+
+          case "headingSection":
+            return (
+              <div class="max-w-3xl mx-auto px-6">
+                <HeadingSection {...section} id={headingIds.get(section._key)} />
+              </div>
+            );
+
+          case "textSection":
+            return (
+              <div class="max-w-3xl mx-auto px-6">
+                <TextSection {...section} />
+              </div>
+            );
+
+          case "ctaSection":
+            return <CtaSection {...section} />;
+
+          case "faqSection":
+            return <FaqSection {...section} />;
+
+          case "featureGridSection":
+            return <FeatureGridSection {...section} />;
+
+          case "testimonialSection":
+            return <TestimonialSection {...section} />;
+
+          case "caseResultSection":
+            return <CaseResultSection {...section} />;
+
+          case "button":
+            return <ButtonBlock {...section} />;
+
+          case "keyTakeawaysSection":
+            return <KeyTakeawaysSection {...section} />;
+
+          default:
+            return null;
+        }
+      })
+    }
+  </main>
+</Main>
