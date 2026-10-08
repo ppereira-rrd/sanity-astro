@@ -143,3 +143,18 @@ export const translationMetadataFields = [
     hidden: autoMatchedOnly,
   }),
 ]
+
+/**
+ * An admin-only explanation of how this document ended up linked, or not linked, to its
+ * translation. Written by scripts/migrate-wordpress.ts, so it is read-only; editors who are
+ * not administrators never see it.
+ */
+export const translationNoteField = defineField({
+  name: 'translationNote',
+  type: 'text',
+  title: 'Translation link note',
+  description: 'Admins only. Why this document is, or is not, linked to its translation.',
+  rows: 4,
+  readOnly: true,
+  hidden: ({currentUser}) => !currentUser?.roles?.some((role) => role.name === 'administrator'),
+})

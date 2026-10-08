@@ -1,5 +1,5 @@
 import {defineField, defineType} from 'sanity'
-import {languageField, wordpressIdField} from '../fields/shared'
+import {languageField, translationNoteField, wordpressIdField} from '../fields/shared'
 import {sectionMembers} from '../sections'
 
 export const pageType = defineType({
@@ -33,6 +33,7 @@ export const pageType = defineType({
       of: sectionMembers,
     }),
 
+    translationNoteField,
     wordpressIdField,
   ],
   // Because basicFields is used instead of defining the fields in every page/post type

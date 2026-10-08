@@ -1,5 +1,5 @@
 import {defineField, defineType} from 'sanity'
-import {languageField, sameLanguageFilter, wordpressIdField} from '../fields/shared'
+import {languageField, sameLanguageFilter, translationNoteField, wordpressIdField} from '../fields/shared'
 import {sectionMembers} from '../sections'
 
 export const postType = defineType({
@@ -35,6 +35,7 @@ export const postType = defineType({
         'The whole article, section by section \u2014 body text, headings, case results, attorneys or a CTA',
       of: sectionMembers,
     }),
+    translationNoteField,
     wordpressIdField,
   ],
   // Because basicFields is used instead of defining the fields in every page/post type

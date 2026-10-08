@@ -1064,6 +1064,15 @@ async function linkTranslations(
       client.createOrReplace({...metadata, _id: id}),
     )
     linked++
+
+    for (const member of members) {
+      const others = members.filter((other) => other.id !== member.id).map((other) => other.language)
+      await setNote(
+        schemaType,
+        member.id,
+        `Linked to its ${others.join(', ')} translation by Polylang in WordPress. No title matching was used.`,
+      )
+    }
   }
   console.log(`Linked ${linked} ${schemaType} translation groups`)
 }
@@ -1554,6 +1563,14 @@ const glossaryKey = (title: string) =>
     .trim()
 const glossaryEnglish = new Map(GLOSSARY.map((entry) => [glossaryKey(entry.es), entry.en]))
 
+/** Types that carry the admin-only `translationNote` field. */
+const NOTE_TYPES: readonly string[] = ['post', 'page']
+
+const setNote = (type: string, id: string, note: string) =>
+  NOTE_TYPES.includes(type)
+    ? withRetry(`note ${id}`, () => client.patch(id).set({translationNote: note}).commit())
+    : Promise.resolve()
+
 interface UnlinkedDoc {
   _id: string
   language: string
@@ -1639,6 +1656,8 @@ function titleSimilarity(a: string, b: string): number {
 
 async function matchUntranslated() {
   const report: Array<Record<string, unknown>> = []
+  /** What each page's admin-only `translationNote` will say, written once the pairs are settled. */
+  const notes: Array<{type: string; _id: string; title?: string; note: string}> = []
 
   for (const type of MATCHABLE_TYPES) {
     const docs = await client.fetch<UnlinkedDoc[]>(
@@ -1663,17 +1682,16 @@ async function matchUntranslated() {
     let next = 0
     const translated = spanish.map((_, index) => fromGlossary[index] ?? modelOutput[next++])
 
-    const candidates = spanish
-      .flatMap((es, index) =>
-        english.map((en) => ({
-          es,
-          en,
-          translated: translated[index],
-          score: titleSimilarity(translated[index], en.title!),
-        })),
-      )
-      .filter((pair) => pair.score >= 0.4)
-      .sort((a, b) => b.score - a.score)
+    const scored = spanish.flatMap((es, index) =>
+      english.map((en) => ({
+        es,
+        en,
+        translated: translated[index],
+        score: titleSimilarity(translated[index], en.title!),
+      })),
+    )
+    const candidates = scored.filter((pair) => pair.score >= 0.4).sort((a, b) => b.score - a.score)
+    const linkedPairs = new Map<string, (typeof scored)[number]>()
 
     // Best score first, one partner each: two Spanish pages never claim the same English one.
     const used = new Set<string>()
@@ -1691,6 +1709,7 @@ async function matchUntranslated() {
       if (!linked) continue
       used.add(pair.es._id)
       used.add(pair.en._id)
+      linkedPairs.set(pair.es._id, pair)
 
       if (DRY_RUN) continue
       await withRetry(`link ${type} ${pair.en.title}`, () =>
@@ -1714,11 +1733,40 @@ async function matchUntranslated() {
       )
     }
 
+    if (NOTE_TYPES.includes(type)) {
+      const pct = (score: number) => score.toFixed(2)
+      const partnerOf = (englishId: string) =>
+        [...linkedPairs.values()].find((pair) => pair.en._id === englishId)
+
+      for (const es of spanish) {
+        const pair = linkedPairs.get(es._id)
+        const own = scored.filter((candidate) => candidate.es._id === es._id)
+        const best = own.reduce((top, candidate) => (candidate.score > top.score ? candidate : top))
+
+        if (pair) {
+          const details = `Spanish title translated as “${pair.translated}”, compared with “${pair.en.title}” (similarity ${pct(pair.score)}, linked at ${MATCH_THRESHOLD} or above).`
+          notes.push({type, _id: es._id, title: es.title, note: `Linked to the English page “${pair.en.title}” automatically by title matching, not by Polylang. ${details} Please verify the translation metadata.`})
+          notes.push({type, _id: pair.en._id, title: pair.en.title, note: `Linked to the Spanish page “${es.title}” automatically by title matching, not by Polylang (similarity ${pct(pair.score)}). Please verify the translation metadata.`})
+          continue
+        }
+
+        const taken = best.score >= MATCH_THRESHOLD ? partnerOf(best.en._id) : undefined
+        const reason = taken
+          ? `Its closest English page, “${best.en.title}” (similarity ${pct(best.score)}), was already linked to the Spanish page “${taken.es.title}”, which scored higher.`
+          : best.score >= 0.4
+            ? `The closest English page was “${best.en.title}” with a similarity of ${pct(best.score)}, below the ${MATCH_THRESHOLD} needed to link automatically.`
+            : `No English page has a similar title; the closest was “${best.en.title}” with a similarity of only ${pct(best.score)}.`
+        notes.push({type, _id: es._id, title: es.title, note: `Not linked to an English page. Spanish title translated as “${best.translated}”. ${reason} Link it manually in the translation metadata if an English version exists.`})
+      }
+    }
+
     const unmatched = spanish.filter((doc) => !used.has(doc._id)).length
     console.log(`  linked ${used.size / 2}, ${unmatched} Spanish left without a match`)
   }
 
+  if (!DRY_RUN) for (const {type, _id, note} of notes) await setNote(type, _id, note)
   writePreview('_translation-matches.json', report)
+  writePreview('_translation-notes.json', notes)
   console.log(
     `Pairs at or above ${MATCH_THRESHOLD} are linked (${DRY_RUN ? 'dry run: not written' : 'written'}); ` +
       `closer misses are listed in ${join(OUTPUT_DIR, '_translation-matches.json')}`,
