@@ -55,7 +55,7 @@ const rendered =
   toc.length > 1 && firstHeading >= 0
     ? [
         ...sections.slice(0, firstHeading),
-        { _type: "tableOfContents" },
+        { _type: "tableOfContentsSection" },
         ...sections.slice(firstHeading),
       ]
     : sections;
@@ -76,10 +76,10 @@ const rendered =
             return <HeroSection {...section} />;
 
           // Prose sections read in a narrow column; the rest stay full width.
-          case "tableOfContents":
+          case "tableOfContentsSection":
             return (
               <div class="max-w-3xl mx-auto px-6">
-                <TableOfContents items={toc} />
+                <TableOfContents items={toc} title={section.heading} levels={section.headingLevels} />
               </div>
             );
 

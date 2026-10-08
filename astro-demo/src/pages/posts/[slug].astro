@@ -70,7 +70,7 @@ const rendered =
   toc.length > 1 && firstHeading >= 0
     ? [
         ...sections.slice(0, firstHeading),
-        { _type: "tableOfContents" },
+        { _type: "tableOfContentsSection" },
         ...sections.slice(firstHeading),
       ]
     : sections;
@@ -128,8 +128,8 @@ const rendered =
             case "keyTakeawaysSection":
               return <KeyTakeawaysSection {...section} />;
 
-            case "tableOfContents":
-              return <TableOfContents items={toc} />;
+            case "tableOfContentsSection":
+              return <TableOfContents items={toc} title={section.heading} levels={section.headingLevels} />;
 
             case "headingSection":
               return (

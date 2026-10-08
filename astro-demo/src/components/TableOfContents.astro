@@ -14,7 +14,7 @@ interface Props {
   levels?: Array<TocItem["level"]>;
 }
 
-const { items, title = "On this page", levels = ["h2", "h3"] } = Astro.props;
+const { items, title = "On this page", levels = ["h2"] } = Astro.props;
 
 const shown = items.filter((item) => levels.includes(item.level));
 
