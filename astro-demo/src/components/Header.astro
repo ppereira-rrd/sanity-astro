@@ -28,12 +28,12 @@ const siteName = settings?.siteName || "Astro + Sanity";
 const home = lang === "es" ? "/es" : "/";
 const labels =
   lang === "es"
-    ? { home: "Inicio", posts: "Artículos", attorneys: "Abogados" }
-    : { home: "Home", posts: "Posts", attorneys: "Attorneys" };
+    ? { home: "Inicio", posts: "Artículos", attorneys: "Abogados", contact: "Contacto" }
+    : { home: "Home", posts: "Posts", attorneys: "Attorneys", contact: "Contact" };
 const paths =
   lang === "es"
-    ? { posts: "/es/articulos", attorneys: "/es/abogados" }
-    : { posts: "/posts", attorneys: "/attorneys" };
+    ? { posts: "/es/articulos", attorneys: "/es/abogados", contact: "/es/contacto" }
+    : { posts: "/posts", attorneys: "/attorneys",  contact: "/contact" };
 ---
 
 <header class="border-b border-gray-200">
@@ -67,6 +67,14 @@ const paths =
         >
           {labels.attorneys}
         </a>
+
+        <a
+          href={paths.contact}
+          class="text-gray-600 hover:text-purple-600 transition"
+        >
+          {labels.contact}
+        </a>
+
         <a
           href={lang === "es" ? "/" : "/es"}
           class="text-gray-600 hover:text-purple-600 transition"
