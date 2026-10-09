@@ -46,12 +46,6 @@ export const siteSettingsType = defineType({
     }),
 
     defineField({
-      name: 'address',
-      type: 'text',
-      rows: 3,
-    }),
-
-    defineField({
       name: 'socialLinks',
       type: 'array',
       title: 'Social Links',
@@ -68,12 +62,6 @@ export const siteSettingsType = defineType({
       ],
     }),
 
-    defineField({
-      name: 'footerText',
-      type: 'text',
-      title: 'Footer Text',
-      rows: 3,
-    }),
   ],
   preview: {
     select: {title: 'siteName', language: 'language'},

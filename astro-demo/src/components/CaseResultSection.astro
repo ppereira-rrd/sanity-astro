@@ -1,8 +1,7 @@
 ---
 /**
- * Renders a `caseResultSection`. The WordPress migration writes these as inline
- * `caseResultItem` values lifted out of a page's own carousel, so they belong to
- * this page alone.
+ * Renders a `caseResultSection`. `caseResults` are `caseResult` documents, expanded from
+ * references by the SECTIONS projection in lib/queries.ts.
  */
 interface CaseResult {
   amount?: string;
@@ -18,7 +17,9 @@ interface Props {
   caseResults?: CaseResult[];
 }
 
-const { heading, intro, caseResults } = Astro.props;
+const { heading, intro } = Astro.props;
+// A reference to a document that is not published comes back as null.
+const caseResults = (Astro.props.caseResults ?? []).filter(Boolean);
 ---
 
 <section class="py-16 md:py-24 px-6">
@@ -34,7 +35,7 @@ const { heading, intro, caseResults } = Astro.props;
     {intro && <p class="text-lg text-gray-600 mb-10 max-w-3xl">{intro}</p>}
 
     {
-      caseResults && caseResults.length > 0 && (
+      caseResults.length > 0 && (
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {caseResults.map((result) => (
             <article class="border border-gray-200 rounded-xl p-6 flex flex-col">

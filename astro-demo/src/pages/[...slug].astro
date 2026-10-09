@@ -17,27 +17,14 @@ import KeyTakeawaysSection from "../components/KeyTakeawaysSection.astro";
 import TableOfContents from "../components/TableOfContents.astro";
 
 import { tableOfContents } from "../lib/headings";
-
-const PAGE_QUERY = `*[
-  _type == "page" &&
-  basic.slug.current == $slug
-][0]`;
+import { PAGE_QUERY, PAGE_SLUGS_QUERY } from "../lib/queries";
 
 const page = await sanityClient.fetch<SanityDocument>(PAGE_QUERY, Astro.params);
 
 export async function getStaticPaths(): Promise<
   { params: { slug: string } }[]
 > {
-  const SLUGS_QUERY = `*[
-  _type == "page" &&
-  defined(basic.slug.current)
-]{
-  "params": {
-    "slug": basic.slug.current
-  }
-}`;
-
-  return await sanityClient.fetch(SLUGS_QUERY);
+  return await sanityClient.fetch(PAGE_SLUGS_QUERY);
 }
 
 if (!page) {

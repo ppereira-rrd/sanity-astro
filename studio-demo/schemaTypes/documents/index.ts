@@ -9,6 +9,9 @@ import {authorType} from './author'
 import {redirectType} from './redirect'
 import {homePageType} from './homePage'
 import {siteSettingsType} from './siteSettings'
+import {officeLocations} from './officeLocations'
+import { aboutPageType } from './aboutpage'
+import { contactPageType } from './contactPage'
 
 export const documentTypes = [
   postType,
@@ -22,4 +25,7 @@ export const documentTypes = [
   homePageType,
   siteSettingsType,
   redirectType,
+  officeLocations,
+  aboutPageType,
+  contactPageType
 ]

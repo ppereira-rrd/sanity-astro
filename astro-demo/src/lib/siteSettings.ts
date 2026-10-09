@@ -1,5 +1,6 @@
 import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
+import { SITE_SETTINGS_QUERY } from "./queries";
 
 export type Language = "en" | "es";
 
@@ -16,7 +17,7 @@ export async function getSiteSettings(
   language: Language,
 ): Promise<SanityDocument | null> {
   const settings = await sanityClient.fetch<SanityDocument[]>(
-    `*[_id in [$id, "siteSettings-en"]]`,
+    SITE_SETTINGS_QUERY,
     { id: `siteSettings-${language}` },
   );
 

@@ -21,20 +21,16 @@ import KeyTakeawaysSection from "../../components/KeyTakeawaysSection.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
 
 import { tableOfContents } from "../../lib/headings";
+import { ATTORNEY_QUERY, ATTORNEY_SLUGS_QUERY } from "../../lib/queries";
 
 export async function getStaticPaths(): Promise<
   { params: { slug: string } }[]
 > {
-  return await sanityClient.fetch(`*[
-    _type == "attorney" &&
-    defined(slug.current)
-  ]{
-    "params": { "slug": slug.current }
-  }`);
+  return await sanityClient.fetch(ATTORNEY_SLUGS_QUERY);
 }
 
 const attorney = await sanityClient.fetch<SanityDocument>(
-  `*[_type == "attorney" && slug.current == $slug][0]`,
+  ATTORNEY_QUERY,
   Astro.params,
 );
 

@@ -2,22 +2,11 @@
 import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
 import Main from "../../layouts/main.astro";
+import { POSTS_QUERY } from "../../lib/queries";
 import {
   createImageUrlBuilder,
   type SanityImageSource,
 } from "@sanity/image-url";
-
-const POSTS_QUERY = `*[
-  _type == "post"
-  && defined(basic.slug.current)
-]|order(basic.publishedAt desc)[0...12]{
-  _id,
-  "title": basic.title,
-  "slug": basic.slug,
-  "excerpt": basic.excerpt,
-  "publishedAt": basic.publishedAt,
-  "featuredImage": basic.featuredImage
-}`;
 
 const posts = await sanityClient.fetch<SanityDocument[]>(POSTS_QUERY);
 

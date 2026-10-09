@@ -36,3 +36,5 @@ node_modules/
 # Astro build output
 astro-demo/dist
 astro-demo/.vercel
+
+/docs

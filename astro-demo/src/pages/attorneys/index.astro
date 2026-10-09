@@ -2,22 +2,11 @@
 import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
 import Main from "../../layouts/main.astro";
+import { ATTORNEYS_QUERY } from "../../lib/queries";
 import {
   createImageUrlBuilder,
   type SanityImageSource,
 } from "@sanity/image-url";
-
-const ATTORNEYS_QUERY = `*[
-  _type == "attorney"
-  && defined(slug.current)
-  && (language == "en" || !defined(language))
-]|order(name asc){
-  _id,
-  name,
-  "slug": slug.current,
-  role,
-  photo
-}`;
 
 const attorneys = await sanityClient.fetch<SanityDocument[]>(ATTORNEYS_QUERY);
 

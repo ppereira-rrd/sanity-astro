@@ -27,7 +27,7 @@
  * Safe to rerun: every document is matched on `wordpressId`, authors on slug, images on their
  * source URL, and translation links on the documents they reference.
  */
-import {randomUUID} from 'node:crypto'
+import {createHash, randomUUID} from 'node:crypto'
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs'
 import {join} from 'node:path'
 import {htmlToBlocks, type TypedObject} from '@portabletext/block-tools'
@@ -834,6 +834,45 @@ async function ctaSection(cta: RawCta, fallbackAlt: string) {
   }
 }
 
+/**
+ * Saves each result lifted out of a page's carousel as a shared `caseResult` document and
+ * returns references to them, so the section holds references like any hand-built one.
+ *
+ * The ID is a hash of the language and the content, so a result repeated across pages
+ * (or across reruns) is one document. `createIfNotExists` keeps an editor's later changes
+ * to it from being overwritten by a rerun.
+ */
+async function caseResultRefs(results: RawCaseResult[], language: string) {
+  const refs = new Map<string, {_key: string; _type: 'reference'; _ref: string}>()
+
+  for (const result of results) {
+    const hash = createHash('sha1')
+      .update([language, result.amount, result.caseType, result.resultType, result.summary].join('|'))
+      .digest('hex')
+      .slice(0, 16)
+    const id = `caseResult-carousel-${hash}`
+    // `unique()` on the section rejects the same reference twice.
+    if (refs.has(id)) continue
+
+    if (!DRY_RUN) {
+      await withRetry(`save case result ${id}`, () =>
+        client.createIfNotExists({
+          _id: id,
+          _type: 'caseResult',
+          language,
+          amount: result.amount,
+          ...(result.caseType ? {caseType: result.caseType} : {}),
+          ...(result.resultType ? {resultType: result.resultType} : {}),
+          ...(result.summary ? {summary: result.summary} : {}),
+        }),
+      )
+    }
+    refs.set(id, {_key: key(), _type: 'reference', _ref: id})
+  }
+
+  return [...refs.values()]
+}
+
 /** `headingSection` only offers h2–h6, so a stray h1 in the article body becomes an h2. */
 const HEADING_LEVELS: Record<string, string> = {h1: 'h2', h2: 'h2', h3: 'h3', h4: 'h4', h5: 'h5', h6: 'h6'}
 
@@ -896,10 +935,11 @@ const allBlocks = (sections: Array<Record<string, unknown>>): TypedObject[] =>
  * The Elementor pipeline, shared by posts and pages: clean the markup, convert what is
  * left to Portable Text, and collect the blocks that become `sections`.
  */
-async function convertContent(html: string, title: string) {
+async function convertContent(html: string, title: string, language: string) {
   const {html: clean, keyTakeaways, ctas, caseResults, testimonials, jsonLd, dropped} =
     cleanElementorHtml(html)
   const {lead, sections: headingSections} = splitAtHeadings(await htmlToBody(clean, title))
+  const caseResultRefList = await caseResultRefs(caseResults, language)
 
   // The whole document, in render order.
   const sections = [
@@ -908,22 +948,9 @@ async function convertContent(html: string, title: string) {
       : []),
     ...(lead.length ? [{_key: key(), _type: 'textSection', body: lead}] : []),
     ...headingSections,
-    // Written inline rather than as shared documents: a page's own carousel is its own.
-    ...(caseResults.length
-      ? [
-          {
-            _key: key(),
-            _type: 'caseResultSection',
-            caseResults: caseResults.map((result) => ({
-              _key: key(),
-              _type: 'caseResultItem',
-              amount: result.amount,
-              ...(result.caseType ? {caseType: result.caseType} : {}),
-              ...(result.resultType ? {resultType: result.resultType} : {}),
-              ...(result.summary ? {summary: result.summary} : {}),
-            })),
-          },
-        ]
+    // The page's own carousel, saved as shared `caseResult` documents and referenced here.
+    ...(caseResultRefList.length
+      ? [{_key: key(), _type: 'caseResultSection', caseResults: caseResultRefList}]
       : []),
     ...(testimonials.length
       ? [
@@ -1317,7 +1344,7 @@ const MIGRATIONS: Array<Migration<never>> = [
     slug: (post: WpPost) => post.slug,
     async build(post: WpPost, slug: string, language: string) {
       const title = decode(post.title.rendered)
-      const converted = await convertContent(post.content.rendered, title)
+      const converted = await convertContent(post.content.rendered, title, language)
 
       // Posts carry several terms; Sanity's `category` holds one. Polylang keeps terms
       // per-language, so the first one that resolved is already the right language.
@@ -1348,7 +1375,7 @@ const MIGRATIONS: Array<Migration<never>> = [
     slug: (page: WpPage) => pagePath(page),
     async build(page: WpPage, slug: string, language: string) {
       const title = decode(page.title.rendered)
-      const converted = await convertContent(page.content.rendered, title)
+      const converted = await convertContent(page.content.rendered, title, language)
 
       if (isHomePage(page)) {
         return {
@@ -1422,7 +1449,7 @@ const MIGRATIONS: Array<Migration<never>> = [
       const name = decode(member.title.rendered)
       const yoast = member.yoast_head_json ?? {}
       // Same pipeline as pages and posts: headings become heading sections, prose text sections.
-      const converted = await convertContent(member.content.rendered, name)
+      const converted = await convertContent(member.content.rendered, name, language)
 
       const media = member._embedded?.['wp:featuredmedia']?.[0]
       const photoAssetId = media?.source_url ? await uploadImage(media.source_url) : null

@@ -8,6 +8,7 @@ import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
 import Main from "../layouts/main.astro";
 import Sections from "./Sections.astro";
+import { HOME_PAGE_QUERY } from "../lib/queries";
 
 interface Props {
   language: "en" | "es";
@@ -16,7 +17,7 @@ interface Props {
 const { language } = Astro.props;
 
 const home = await sanityClient.fetch<SanityDocument | null>(
-  `*[_id == $id][0]`,
+  HOME_PAGE_QUERY,
   { id: `homePage-${language}` },
 );
 ---

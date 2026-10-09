@@ -4,6 +4,7 @@ import { createClient } from "@sanity/client";
 import sitemap from "@astrojs/sitemap";
 import vercel from "@astrojs/vercel";
 import sanity from "@sanity/astro";
+import { REDIRECTS_QUERY } from "./src/lib/queries.ts";
 
 // Docs for redirects
 // https://www.sanity.io/docs/developer-guides/managing-redirects-with-sanity
@@ -17,12 +18,7 @@ const client = createClient({
 });
 
 // Fetch our redirects from Sanity via GROQ
-const redirectData = await client.fetch(
-  `*[_type == "redirect"]{
-	  "from": from.current,
-	  "to": to.current
-	}`,
-);
+const redirectData = await client.fetch(REDIRECTS_QUERY);
 
 // Create empty object to add our redirects to
 const redirects = {};

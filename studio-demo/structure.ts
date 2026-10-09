@@ -3,8 +3,10 @@ import {HomeIcon} from '@sanity/icons/Home'
 import {CogIcon} from '@sanity/icons/Cog'
 import {supportedLanguages} from './schemaTypes/fields/shared'
 
-/** Types opened as one fixed document per language instead of a list. */
-export const singletonTypes = ['homePage', 'siteSettings'] as const
+// https://www.sanity.io/docs/studio/structure-introduction
+
+/** Declaration - Types opened as one fixed document per language instead of a list. */
+export const singletonTypes = ['homePage', 'aboutPage', 'contactPage', 'siteSettings'] as const
 
 /** Content types, in the order they appear under "Content". */
 const contentTypes = [
@@ -16,9 +18,11 @@ const contentTypes = [
   'attorney',
   'testimonial',
   'author',
+  'officeLocations',
 ]
 
 /** One template per singleton and language, so the fixed document is created with `language` set. */
+// This creates separate singleton documents for each language. It’s implementing document-level localization.
 export const singletonTemplates = singletonTypes.flatMap((type) =>
   supportedLanguages.map((language) => ({
     id: `${type}-${language.id}`,
@@ -29,7 +33,12 @@ export const singletonTemplates = singletonTypes.flatMap((type) =>
 )
 
 /** "Home Page" for the default language, "Home Page (Spanish)" for the others. */
-const singletonItems = (S: Parameters<StructureResolver>[0], type: string, title: string, icon: typeof HomeIcon) =>
+const singletonItems = (
+  S: Parameters<StructureResolver>[0],
+  type: string,
+  title: string,
+  icon: typeof HomeIcon,
+) =>
   supportedLanguages.map((language, index) =>
     S.listItem()
       .title(index === 0 ? title : `${title} (${language.title})`)
@@ -50,17 +59,24 @@ export const structure: StructureResolver = (S) =>
     .title('Studio')
     .items([
       S.listItem()
-        .title('Main')
-        .child(S.list().title('Main').items(singletonItems(S, 'homePage', 'Home Page', HomeIcon))),
+        .title('Single Pages')
+        .child(
+          S.list()
+            .title('Home')
+            // .items(singletonItems(S, 'homePage', 'Home Page', HomeIcon)),
+            .items([
+              ...singletonItems(S, 'homePage', 'Home Page', HomeIcon),
+              ...singletonItems(S, 'aboutPage', 'About Page', HomeIcon),
+              ...singletonItems(S, 'contactPage', 'Contact Page', HomeIcon)
+            ]),
+        ),
 
       S.listItem()
         .title('Content')
         .child(
           S.list()
             .title('Content')
-            .items(
-              contentTypes.map((type) => S.documentTypeListItem(type)),
-            ),
+            .items(contentTypes.map((type) => S.documentTypeListItem(type))),
         ),
 
       S.listItem()
@@ -76,4 +92,3 @@ export const structure: StructureResolver = (S) =>
             ]),
         ),
     ])
-

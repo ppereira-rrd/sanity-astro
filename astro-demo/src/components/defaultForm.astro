@@ -1,0 +1,33 @@
+---
+/**
+ * Default form with astro actions
+ */
+---
+<form>
+  <label for="name">Name</label>
+  <input id="name" required type="text" name="name" />
+  <label for="email">E-mail</label>
+  <input id="email" required type="email" name="email" />
+  <label for="phone">Phone Number</label>
+  <input id="phone" required type="tel" name="phone" />
+  <label for="message">Message</label>
+  <input id="message" required type="text" name="message" />
+  <label>
+    <input required type="checkbox" name="terms">
+    I agree to the terms of service
+  </label>
+  <button>Send</button>
+</form>
+
+<script>
+  import { actions } from 'astro:actions';
+  import { navigate } from 'astro:transitions/client';
+
+  const form = document.querySelector('form');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const { error } = await actions.defaultForm(formData);
+    if (!error) navigate('/thank-you');
+  })
+</script>

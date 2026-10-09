@@ -7,8 +7,8 @@ import {singletonTemplates, singletonTypes, structure} from './structure'
 import {supportedLanguages, translatedTypes, translationMetadataFields} from './schemaTypes/fields/shared'
 
 export default defineConfig({
-  name: 'default',
-  title: 'Demo',
+  name: 'SSCM',
+  title: 'Sanity Studio Client Migration',
 
   projectId: 'igodg8qe',
   dataset: 'production',
@@ -48,6 +48,7 @@ export default defineConfig({
      * read-only there's no way to set one in the form — it can never be translated.
      * Drop those templates so only the language-specific options are offered.
      */
+    // https://www.sanity.io/docs/studio/localization
     newDocumentOptions: (prev) =>
       prev.filter(
         (template) =>

@@ -2,10 +2,10 @@ import {defineField, defineType} from 'sanity'
 import {sameLanguageFilter} from '../fields/shared'
 
 /**
- * Case results on a page or post, either way round: a reference to a shared
- * `caseResult` document when the same result is used in several places, or a
- * `caseResultItem` written here when it belongs to this page alone — which is what
- * the WordPress migration lifts out of a page's own carousel.
+ * Case results on a page or post. Every entry is a reference to a shared `caseResult`
+ * document, so a result is edited once and changes everywhere it appears — including the
+ * ones the WordPress migration lifts out of a page's own carousel, which it saves as
+ * `caseResult` documents too.
  *
  * The reference picker is filtered to the language of the document being edited, so
  * a Spanish page can only show Spanish case results.
@@ -39,7 +39,6 @@ export const caseResultSection = defineType({
           to: [{type: 'caseResult'}],
           options: {filter: sameLanguageFilter},
         },
-        {type: 'caseResultItem'},
       ],
       validation: (rule) => rule.unique().min(1),
     }),
