@@ -1,5 +1,33 @@
 ---
-import HomePage from "../components/HomePage.astro";
+// The studio keeps one `homePage` document per language under a fixed ID, so this reads
+// `homePage-en` directly rather than searching for it.
+import type { SanityDocument } from "@sanity/client";
+import { sanityClient } from "sanity:client";
+import Main from "../layouts/main.astro";
+import Sections from "../components/Sections.astro";
+import { HOME_PAGE_QUERY } from "../lib/queries";
+
+const home = await sanityClient.fetch<SanityDocument | null>(HOME_PAGE_QUERY, {
+  id: "homePage-en",
+});
 ---
 
-<HomePage language="en" />
+<Main
+  lang="en"
+  title={home?.seo?.metaTitle || home?.title || "Home"}
+  description={home?.seo?.metaDescription || ""}
+>
+  {
+    home ? (
+      <div class="py-16">
+        <Sections sections={home.sections} />
+      </div>
+    ) : (
+      <div class="min-h-screen flex items-center justify-center px-6 text-center">
+        <p class="text-gray-600">
+          The home page has not been created in Sanity yet.
+        </p>
+      </div>
+    )
+  }
+</Main>

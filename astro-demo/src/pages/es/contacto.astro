@@ -1,20 +1,20 @@
 ---
 // The studio keeps one `contactPage` document per language under a fixed ID, so this reads
-// `contactPage-en` directly rather than searching for it.
+// `contactPage-es` directly rather than searching for it.
 import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
-import Main from "../layouts/main.astro";
-import Sections from "../components/Sections.astro";
-import { CONTACT_PAGE_QUERY } from "../lib/queries";
+import Main from "../../layouts/main.astro";
+import Sections from "../../components/Sections.astro";
+import { CONTACT_PAGE_QUERY } from "../../lib/queries";
 
 const contact = await sanityClient.fetch<SanityDocument | null>(CONTACT_PAGE_QUERY, {
-  id: "contactPage-en",
+  id: "contactPage-es",
 });
 ---
 
 <Main
-  lang="en"
-  title={contact?.seo?.metaTitle || contact?.title || "Contact Us"}
+  lang="es"
+  title={contact?.seo?.metaTitle || contact?.title || "Contacto"}
   description={contact?.seo?.metaDescription || ""}
 >
   {
@@ -25,7 +25,7 @@ const contact = await sanityClient.fetch<SanityDocument | null>(CONTACT_PAGE_QUE
     ) : (
       <div class="min-h-screen flex items-center justify-center px-6 text-center">
         <p class="text-gray-600">
-          The contact page has not been created in Sanity yet.
+          The Spanish contact page has not been created in Sanity yet.
         </p>
       </div>
     )

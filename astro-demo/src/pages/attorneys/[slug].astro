@@ -34,6 +34,10 @@ const attorney = await sanityClient.fetch<SanityDocument>(
   { ...Astro.params, language: "en" },
 );
 
+if (!attorney) {
+  return Astro.rewrite("/404");
+}
+
 const { projectId, dataset } = sanityClient.config();
 const urlFor = (source: SanityImageSource) =>
   projectId && dataset

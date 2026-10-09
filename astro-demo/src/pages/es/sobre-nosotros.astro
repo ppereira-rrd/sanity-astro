@@ -1,0 +1,33 @@
+---
+// The studio keeps one `aboutPage` document per language under a fixed ID, so this reads
+// `aboutPage-es` directly rather than searching for it.
+import type { SanityDocument } from "@sanity/client";
+import { sanityClient } from "sanity:client";
+import Main from "../../layouts/main.astro";
+import Sections from "../../components/Sections.astro";
+import { ABOUT_PAGE_QUERY } from "../../lib/queries";
+
+const about = await sanityClient.fetch<SanityDocument | null>(ABOUT_PAGE_QUERY, {
+  id: "aboutPage-es",
+});
+---
+
+<Main
+  lang="es"
+  title={about?.seo?.metaTitle || about?.title || "Acerca de"}
+  description={about?.seo?.metaDescription || ""}
+>
+  {
+    about ? (
+      <div class="py-16">
+        <Sections sections={about.sections} />
+      </div>
+    ) : (
+      <div class="min-h-screen flex items-center justify-center px-6 text-center">
+        <p class="text-gray-600">
+          The Spanish about page has not been created in Sanity yet.
+        </p>
+      </div>
+    )
+  }
+</Main>

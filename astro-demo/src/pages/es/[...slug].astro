@@ -26,6 +26,10 @@ const page = await sanityClient.fetch<SanityDocument>(PAGE_QUERY, {
   language,
 });
 
+if (!page) {
+  return Astro.rewrite("/404");
+}
+
 export async function getStaticPaths(): Promise<
   { params: { slug: string } }[]
 > {
