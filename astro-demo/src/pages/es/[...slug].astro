@@ -3,10 +3,6 @@ import Main from "../../layouts/main.astro";
 
 import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
-import {
-  createImageUrlBuilder,
-  type SanityImageSource,
-} from "@sanity/image-url";
 
 import HeroSection from "../../components/HeroSection.astro";
 import HeadingSection from "../../components/HeadingSection.astro";
@@ -21,32 +17,28 @@ import KeyTakeawaysSection from "../../components/KeyTakeawaysSection.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
 
 import { tableOfContents } from "../../lib/headings";
-import { ATTORNEY_QUERY, ATTORNEY_SLUGS_QUERY } from "../../lib/queries";
+import { PAGE_QUERY, PAGE_SLUGS_QUERY } from "../../lib/queries";
+
+const language = "es";
+
+const page = await sanityClient.fetch<SanityDocument>(PAGE_QUERY, {
+  ...Astro.params,
+  language,
+});
 
 export async function getStaticPaths(): Promise<
   { params: { slug: string } }[]
 > {
-  return await sanityClient.fetch(ATTORNEY_SLUGS_QUERY, { language: "en" });
+  return await sanityClient.fetch(PAGE_SLUGS_QUERY, { language: "es" });
 }
 
-const attorney = await sanityClient.fetch<SanityDocument>(
-  ATTORNEY_QUERY,
-  { ...Astro.params, language: "en" },
-);
 
-const { projectId, dataset } = sanityClient.config();
-const urlFor = (source: SanityImageSource) =>
-  projectId && dataset
-    ? createImageUrlBuilder({ projectId, dataset }).image(source)
-    : null;
-
-const sections: any[] = Array.isArray(attorney.sections)
-  ? attorney.sections
-  : [];
+const sections: any[] = Array.isArray(page.sections) ? page.sections : [];
 const toc = tableOfContents(sections);
 const headingIds = new Map(toc.map((item) => [item.key, item.id]));
 
-// Same placement as pages: directly above the first heading it indexes.
+// The contents list belongs directly above what it indexes, which puts it after the
+// hero and the lede. Spliced in as a section so the dispatch below stays flat.
 const firstHeading = sections.findIndex((s) => s._type === "headingSection");
 const rendered =
   toc.length > 1 && firstHeading >= 0
@@ -59,68 +51,25 @@ const rendered =
 ---
 
 <Main
-  title={attorney.seo?.metaTitle || attorney.name}
-  description={attorney.seo?.metaDescription || attorney.shortBio || ""}
+  lang={language}
+  title={page.seo?.metaTitle || page.title}
+  description={page.seo?.metaDescription ||
+    page.meta_description ||
+    page.excerpt ||
+    ""}
 >
   <main class="min-h-screen py-16">
-    <header class="max-w-3xl mx-auto px-6 mb-12 flex items-center gap-8">
-      {
-        attorney.photo && (
-          <img
-            src={urlFor(attorney.photo)?.width(480).height(480).fit("crop").url()}
-            alt={attorney.photo.alt || attorney.name}
-            class="w-40 h-40 shrink-0 rounded-xl object-cover"
-            width="160"
-            height="160"
-          />
-        )
-      }
-
-      <div class="min-w-0">
-        <h1 class="text-4xl font-bold tracking-tight">{attorney.name}</h1>
-
-        {attorney.role && <p class="mt-2 text-lg text-gray-600">{attorney.role}</p>}
-
-        {
-          attorney.shortBio && (
-            <p class="mt-4 text-gray-600">{attorney.shortBio}</p>
-          )
-        }
-
-        {
-          (attorney.email || attorney.phone) && (
-            <p class="mt-4 text-sm">
-              {attorney.email && (
-                <a class="text-purple-600 underline" href={`mailto:${attorney.email}`}>
-                  {attorney.email}
-                </a>
-              )}
-              {attorney.email && attorney.phone && " · "}
-              {attorney.phone && (
-                <a class="text-purple-600 underline" href={`tel:${attorney.phone}`}>
-                  {attorney.phone}
-                </a>
-              )}
-            </p>
-          )
-        }
-      </div>
-    </header>
-
     {
       rendered.map((section: any) => {
         switch (section._type) {
           case "heroSection":
             return <HeroSection {...section} />;
 
+          // Prose sections read in a narrow column; the rest stay full width.
           case "tableOfContentsSection":
             return (
               <div class="max-w-3xl mx-auto px-6">
-                <TableOfContents
-                  items={toc}
-                  title={section.heading}
-                  levels={section.headingLevels}
-                />
+                <TableOfContents items={toc} title={section.heading} levels={section.headingLevels} />
               </div>
             );
 

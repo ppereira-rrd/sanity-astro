@@ -19,18 +19,27 @@ const SECTIONS = `sections[]{
 
 /** Sitewide settings for `$id` and the English fallback, in one round trip. */
 export const SITE_SETTINGS_QUERY = `*[_id in [$id, "siteSettings-en"]]`;
-
 /** The home page singleton, looked up by its fixed `$id` (`homePage-en` / `homePage-es`). */
 export const HOME_PAGE_QUERY = `*[_id == $id][0]{ ..., ${SECTIONS} }`;
+/** The about page singleton, looked up by its fixed `$id` (`aboutPage-en` / `aboutPage-es`). */
+export const ABOUT_PAGE_QUERY = `*[_id == $id][0]{ ..., ${SECTIONS} }`;
+/** The contact page singleton, looked up by its fixed `$id` (`contactPage-en` / `contactPage-es`). */
+export const CONTACT_PAGE_QUERY = `*[_id == $id][0]{ ..., ${SECTIONS} }`;
 
-/** One page by `$slug`. */
+/**
+ * One page by `$slug` in `$language`. The English and Spanish versions of a page can share a
+ * slug (the migration strips the language prefix), so the language has to be part of the match.
+ */
 export const PAGE_QUERY = `*[
   _type == "page" &&
+  language == $language &&
   basic.slug.current == $slug
 ][0]{ ..., ${SECTIONS} }`;
 
+/** The slugs of every page in `$language`. */
 export const PAGE_SLUGS_QUERY = `*[
   _type == "page" &&
+  language == $language &&
   defined(basic.slug.current)
 ]{
   "params": {
@@ -38,9 +47,10 @@ export const PAGE_SLUGS_QUERY = `*[
   }
 }`;
 
-/** One post by `$slug`. `basic.author` is a reference, so it is dereferenced for the name and bio. */
+/** One post by `$slug` in `$language`. `basic.author` is a reference, so it is dereferenced for the name and bio. */
 export const POST_QUERY = `*[
   _type == "post" &&
+  language == $language &&
   basic.slug.current == $slug
 ][0]{
   ...,
@@ -51,8 +61,10 @@ export const POST_QUERY = `*[
   }
 }`;
 
+/** The slugs of every post in `$language`. */
 export const POST_SLUGS_QUERY = `*[
   _type == "post" &&
+  language == $language &&
   defined(basic.slug.current)
 ]{
   "params": {
@@ -60,9 +72,10 @@ export const POST_SLUGS_QUERY = `*[
   }
 }`;
 
-/** The twelve newest posts, flattened out of `basic` for the list. */
+/** The twelve newest posts in `$language`, flattened out of `basic` for the list. */
 export const POSTS_QUERY = `*[
   _type == "post"
+  && language == $language
   && defined(basic.slug.current)
 ]|order(basic.publishedAt desc)[0...12]{
   _id,
@@ -73,24 +86,27 @@ export const POSTS_QUERY = `*[
   "featuredImage": basic.featuredImage
 }`;
 
-/** One attorney by `$slug`. */
+/** One attorney by `$slug` in `$language`. */
 export const ATTORNEY_QUERY = `*[
   _type == "attorney" &&
+  language == $language &&
   slug.current == $slug
 ][0]{ ..., ${SECTIONS} }`;
 
+/** The slugs of every attorney in `$language`. */
 export const ATTORNEY_SLUGS_QUERY = `*[
   _type == "attorney" &&
+  language == $language &&
   defined(slug.current)
 ]{
   "params": { "slug": slug.current }
 }`;
 
-/** English (or language-less) attorneys, alphabetical, for the team grid. */
+/** Attorneys in `$language`, alphabetical, for the team grid. */
 export const ATTORNEYS_QUERY = `*[
   _type == "attorney"
   && defined(slug.current)
-  && (language == "en" || !defined(language))
+  && language == $language
 ]|order(name asc){
   _id,
   name,

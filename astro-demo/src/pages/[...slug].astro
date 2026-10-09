@@ -19,16 +19,17 @@ import TableOfContents from "../components/TableOfContents.astro";
 import { tableOfContents } from "../lib/headings";
 import { PAGE_QUERY, PAGE_SLUGS_QUERY } from "../lib/queries";
 
-const page = await sanityClient.fetch<SanityDocument>(PAGE_QUERY, Astro.params);
+const language = "en";
+
+const page = await sanityClient.fetch<SanityDocument>(PAGE_QUERY, {
+  ...Astro.params,
+  language,
+});
 
 export async function getStaticPaths(): Promise<
   { params: { slug: string } }[]
 > {
-  return await sanityClient.fetch(PAGE_SLUGS_QUERY);
-}
-
-if (!page) {
-  throw new Error("Page not found");
+  return await sanityClient.fetch(PAGE_SLUGS_QUERY, { language: "en" });
 }
 
 const sections: any[] = Array.isArray(page.sections) ? page.sections : [];
@@ -49,6 +50,7 @@ const rendered =
 ---
 
 <Main
+  lang={language}
   title={page.seo?.metaTitle || page.title}
   description={page.seo?.metaDescription ||
     page.meta_description ||

@@ -30,6 +30,10 @@ const labels =
   lang === "es"
     ? { home: "Inicio", posts: "Artículos", attorneys: "Abogados" }
     : { home: "Home", posts: "Posts", attorneys: "Attorneys" };
+const paths =
+  lang === "es"
+    ? { posts: "/es/articulos", attorneys: "/es/abogados" }
+    : { posts: "/posts", attorneys: "/attorneys" };
 ---
 
 <header class="border-b border-gray-200">
@@ -53,12 +57,12 @@ const labels =
           {labels.home}
         </a>
 
-        <a href="/posts" class="text-gray-600 hover:text-purple-600 transition">
+        <a href={paths.posts} class="text-gray-600 hover:text-purple-600 transition">
           {labels.posts}
         </a>
 
         <a
-          href="/attorneys"
+          href={paths.attorneys}
           class="text-gray-600 hover:text-purple-600 transition"
         >
           {labels.attorneys}

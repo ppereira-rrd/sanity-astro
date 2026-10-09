@@ -16,6 +16,10 @@ const labels =
   lang === "es"
     ? { home: "Inicio", posts: "Artículos", attorneys: "Abogados" }
     : { home: "Home", posts: "Posts", attorneys: "Attorneys" };
+const paths =
+  lang === "es"
+    ? { posts: "/es/articulos", attorneys: "/es/abogados" }
+    : { posts: "/posts", attorneys: "/attorneys" };
 const socialLinks: Array<{ _key: string; platform: string; url: string }> =
   settings?.socialLinks ?? [];
 ---
@@ -72,13 +76,13 @@ const socialLinks: Array<{ _key: string; platform: string; url: string }> =
           {labels.home}
         </a>
         <a
-          href="/posts"
+          href={paths.posts}
           class="text-gray-500 hover:text-purple-600 transition"
         >
           {labels.posts}
         </a>
         <a
-          href="/attorneys"
+          href={paths.attorneys}
           class="text-gray-500 hover:text-purple-600 transition"
         >
           {labels.attorneys}

@@ -1,5 +1,5 @@
 ---
-import Main from "../../layouts/main.astro";
+import Main from "../../../layouts/main.astro";
 
 import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
@@ -8,30 +8,30 @@ import {
   type SanityImageSource,
 } from "@sanity/image-url";
 
-import HeroSection from "../../components/HeroSection.astro";
-import HeadingSection from "../../components/HeadingSection.astro";
-import TextSection from "../../components/TextSection.astro";
-import CtaSection from "../../components/CtaSection.astro";
-import FaqSection from "../../components/FaqSection.astro";
-import FeatureGridSection from "../../components/FeatureGridSection.astro";
-import TestimonialSection from "../../components/TestimonialSection.astro";
-import CaseResultSection from "../../components/CaseResultSection.astro";
-import ButtonBlock from "../../components/ButtonBlock.astro";
-import KeyTakeawaysSection from "../../components/KeyTakeawaysSection.astro";
-import TableOfContents from "../../components/TableOfContents.astro";
+import HeroSection from "../../../components/HeroSection.astro";
+import HeadingSection from "../../../components/HeadingSection.astro";
+import TextSection from "../../../components/TextSection.astro";
+import CtaSection from "../../../components/CtaSection.astro";
+import FaqSection from "../../../components/FaqSection.astro";
+import FeatureGridSection from "../../../components/FeatureGridSection.astro";
+import TestimonialSection from "../../../components/TestimonialSection.astro";
+import CaseResultSection from "../../../components/CaseResultSection.astro";
+import ButtonBlock from "../../../components/ButtonBlock.astro";
+import KeyTakeawaysSection from "../../../components/KeyTakeawaysSection.astro";
+import TableOfContents from "../../../components/TableOfContents.astro";
 
-import { tableOfContents } from "../../lib/headings";
-import { ATTORNEY_QUERY, ATTORNEY_SLUGS_QUERY } from "../../lib/queries";
+import { tableOfContents } from "../../../lib/headings";
+import { ATTORNEY_QUERY, ATTORNEY_SLUGS_QUERY } from "../../../lib/queries";
 
 export async function getStaticPaths(): Promise<
   { params: { slug: string } }[]
 > {
-  return await sanityClient.fetch(ATTORNEY_SLUGS_QUERY, { language: "en" });
+  return await sanityClient.fetch(ATTORNEY_SLUGS_QUERY, { language: "es" });
 }
 
 const attorney = await sanityClient.fetch<SanityDocument>(
   ATTORNEY_QUERY,
-  { ...Astro.params, language: "en" },
+  { ...Astro.params, language: "es" },
 );
 
 const { projectId, dataset } = sanityClient.config();
@@ -59,6 +59,7 @@ const rendered =
 ---
 
 <Main
+  lang="es"
   title={attorney.seo?.metaTitle || attorney.name}
   description={attorney.seo?.metaDescription || attorney.shortBio || ""}
 >

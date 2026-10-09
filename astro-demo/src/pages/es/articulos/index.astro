@@ -1,15 +1,15 @@
 ---
 import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
-import Main from "../../layouts/main.astro";
-import { POSTS_QUERY } from "../../lib/queries";
+import Main from "../../../layouts/main.astro";
+import { POSTS_QUERY } from "../../../lib/queries";
 import {
   createImageUrlBuilder,
   type SanityImageSource,
 } from "@sanity/image-url";
 
 const posts = await sanityClient.fetch<SanityDocument[]>(POSTS_QUERY, {
-  language: "en",
+  language: "es",
 });
 
 const { projectId, dataset } = sanityClient.config();
@@ -21,8 +21,9 @@ const urlFor = (source: SanityImageSource) =>
 ---
 
 <Main
-  title="Posts | Astro + Sanity"
-  description="A simple demo showing how Astro works with Sanity as a headless CMS."
+  lang="es"
+  title="Artículos | Astro + Sanity"
+  description="Una demostración sencilla de cómo funciona Astro con Sanity como CMS headless."
 >
   <body>
     <main class="min-h-screen flex items-center justify-center px-6 py-16">
@@ -35,11 +36,11 @@ const urlFor = (source: SanityImageSource) =>
           </p>
 
           <h1 class="text-5xl md:text-6xl font-bold tracking-tight mb-6">
-            Posts
+            Artículos
           </h1>
 
           <p class="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto">
-            Content managed in Sanity and rendered with Astro.
+            Contenido administrado en Sanity y generado con Astro.
           </p>
         </div>
 
@@ -48,7 +49,7 @@ const urlFor = (source: SanityImageSource) =>
             <div class="grid gap-4">
               {posts.map((post) => (
                 <a
-                  href={`/posts/${post.slug.current}`}
+                  href={`/es/articulos/${post.slug.current}`}
                   class="block p-6 rounded-xl border border-gray-200 hover:bg-gray-50 hover:shadow-md transition"
                 >
                   <div class="flex items-center gap-5">
@@ -70,7 +71,7 @@ const urlFor = (source: SanityImageSource) =>
                       <h2 class="text-xl font-semibold mb-2">{post.title}</h2>
 
                       <p class="text-sm text-gray-500">
-                        {new Date(post.publishedAt).toLocaleDateString()}
+                        {new Date(post.publishedAt).toLocaleDateString("es")}
                       </p>
                     </div>
 
@@ -81,18 +82,18 @@ const urlFor = (source: SanityImageSource) =>
             </div>
           ) : (
             <div class="p-8 rounded-xl border border-gray-200 text-center">
-              <h2 class="text-xl font-semibold mb-2">No posts yet</h2>
+              <h2 class="text-xl font-semibold mb-2">Aún no hay artículos</h2>
 
               <p class="text-gray-600">
-                Create a post in Sanity and it will appear here.
+                Cree un artículo en Sanity y aparecerá aquí.
               </p>
             </div>
           )
         }
 
         <div class="text-center mt-10">
-          <a href="/" class="text-purple-600 underline hover:text-purple-800">
-            ← Back to home
+          <a href="/es" class="text-purple-600 underline hover:text-purple-800">
+            ← Volver al inicio
           </a>
         </div>
       </div>

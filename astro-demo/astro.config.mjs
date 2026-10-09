@@ -1,3 +1,6 @@
+// Docs for redirects
+// https://www.sanity.io/docs/developer-guides/managing-redirects-with-sanity
+
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 import { createClient } from "@sanity/client";
@@ -5,9 +8,6 @@ import sitemap from "@astrojs/sitemap";
 import vercel from "@astrojs/vercel";
 import sanity from "@sanity/astro";
 import { REDIRECTS_QUERY } from "./src/lib/queries.ts";
-
-// Docs for redirects
-// https://www.sanity.io/docs/developer-guides/managing-redirects-with-sanity
 
 // Initialize Sanity client
 const client = createClient({

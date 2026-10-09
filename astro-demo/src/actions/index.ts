@@ -19,6 +19,9 @@ export const server = {
     }),
     handler: async ({ name, email, phone, message, terms }) => {
       /* ... */
+      // Pass to Zapier, Google Sheets
+      // Send notification email to client 
+      // Failure Check
     },
   }),
 };

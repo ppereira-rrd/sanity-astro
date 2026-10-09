@@ -1,15 +1,15 @@
 ---
 import type { SanityDocument } from "@sanity/client";
 import { sanityClient } from "sanity:client";
-import Main from "../../layouts/main.astro";
-import { ATTORNEYS_QUERY } from "../../lib/queries";
+import Main from "../../../layouts/main.astro";
+import { ATTORNEYS_QUERY } from "../../../lib/queries";
 import {
   createImageUrlBuilder,
   type SanityImageSource,
 } from "@sanity/image-url";
 
 const attorneys = await sanityClient.fetch<SanityDocument[]>(ATTORNEYS_QUERY, {
-  language: "en",
+  language: "es",
 });
 
 const { projectId, dataset } = sanityClient.config();
@@ -19,17 +19,17 @@ const urlFor = (source: SanityImageSource) =>
     : null;
 ---
 
-<Main title="Attorneys" description="Meet our attorneys.">
+<Main lang="es" title="Abogados" description="Conozca a nuestros abogados.">
   <main class="min-h-screen px-6 py-16">
     <div class="max-w-5xl mx-auto">
-      <h1 class="text-4xl font-bold tracking-tight mb-10">Attorneys</h1>
+      <h1 class="text-4xl font-bold tracking-tight mb-10">Abogados</h1>
 
       {
         attorneys.length > 0 ? (
           <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {attorneys.map((attorney) => (
               <a
-                href={`/attorneys/${attorney.slug}`}
+                href={`/es/abogados/${attorney.slug}`}
                 class="block p-5 rounded-xl border border-gray-200 hover:bg-gray-50 hover:shadow-md transition"
               >
                 {attorney.photo && (
@@ -52,7 +52,7 @@ const urlFor = (source: SanityImageSource) =>
             ))}
           </div>
         ) : (
-          <p class="text-gray-600">No attorneys yet.</p>
+          <p class="text-gray-600">Aún no hay abogados.</p>
         )
       }
     </div>
